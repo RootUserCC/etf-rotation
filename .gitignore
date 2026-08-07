@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+site_check*.png
+data/stocks_cache.pkl
+*.log
