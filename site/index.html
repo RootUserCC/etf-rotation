@@ -38,8 +38,8 @@
 </head>
 <body>
 <header>
-  <h1>平均股价(880003) · 中证1000ETF / 红利ETF 轮动监控</h1>
-  <span class="legend-tip">▲<b class="r">买1000（卖红利）</b>　▼<b class="g">买红利（卖1000）</b>　粉色底纹=持有1000ETF区间</span>
+  <h1>平均股价(880003) · 中证1000ETF / 红利低波ETF 轮动监控</h1>
+  <span class="legend-tip">▲<b class="r">买1000（卖红利低波）</b>　▼<b class="g">买红利低波（卖1000）</b>　粉色底纹=持有1000ETF区间</span>
   <span class="meta" id="updated"></span>
 </header>
 <div id="err">数据加载失败：请先运行 export_json.py 生成 site/data.json，并通过 启动.bat 访问（勿直接双击 html）。</div>
@@ -51,12 +51,13 @@
   </div>
 </div>
 <div class="table-wrap">
-  <h2>换仓明细（信号日收盘触发，次日开盘成交）</h2>
+  <h2>持仓明细（每行 = 一段完整持仓，最新在前；收益已含双边费用）</h2>
+  <div style="font-size:12px;color:#999;padding:0 0 8px">累计收益为复利连乘：本行累计 = (1+上行累计) × (1+本行收益) − 1，不是相加</div>
   <div class="table-scroll">
     <table>
       <thead>
-        <tr><th>成交日期</th><th>操作</th><th>1000ETF收盘</th><th>红利ETF收盘</th><th>信号日</th>
-            <th>DIF</th><th>DEA</th><th>MACD柱</th><th>区间收益</th><th>累计收益</th></tr>
+        <tr><th>持仓标的</th><th>买入日期</th><th>买入价</th><th>卖出日期</th><th>卖出价</th>
+            <th>持有交易日</th><th>收益</th><th>累计收益</th></tr>
       </thead>
       <tbody id="tbody"></tbody>
     </table>
@@ -121,18 +122,18 @@ function renderTable(data) {
   const fmt = v => (v == null ? '-' : Number(v).toFixed(3));
   const pct = v => (v == null ? '-' : (v * 100).toFixed(2) + '%');
   const cls = v => (v < 0 ? 'neg' : 'pos');
-  // 最新在前
-  const rows = [...data.trades].reverse().map(t => {
-    const op = t.action === 'buy'
-      ? '<span class="tag buy">买入1000ETF / 卖出红利</span>'
-      : '<span class="tag sell">卖出1000ETF / 买入红利</span>';
-    return `<tr class="${t.action}">
-      <td>${t.date}</td><td>${op}</td><td>${fmt(t.p1000)}</td><td>${fmt(t.pdiv)}</td><td>${t.sig_date}</td>
-      <td class="${cls(t.dif)}">${fmt(t.dif)}</td>
-      <td class="${cls(t.dea)}">${fmt(t.dea)}</td>
-      <td class="${cls(t.macdval)}">${fmt(t.macdval)}</td>
-      <td class="${cls(t.leg_ret)}">${pct(t.leg_ret)}</td>
-      <td class="${cls(t.cum_ret)}">${pct(t.cum_ret)}</td>
+  // 最新在前；每行一段完整持仓，持有中的显示浮动盈亏
+  const rows = [...data.legs].reverse().map(l => {
+    const tag = l.asset === '1000'
+      ? '<span class="tag buy">中证1000ETF</span>'
+      : '<span class="tag sell">红利低波ETF</span>';
+    return `<tr class="${l.asset === '1000' ? 'buy' : 'sell'}">
+      <td>${tag}</td>
+      <td>${l.buy_date}</td><td>${fmt(l.buy_price)}</td>
+      <td>${l.open ? '<b>持有中</b>' : l.sell_date}</td><td>${fmt(l.sell_price)}</td>
+      <td>${l.days}</td>
+      <td class="${cls(l.ret)}">${pct(l.ret)}${l.open ? '(浮)' : ''}</td>
+      <td class="${cls(l.cum)}">${pct(l.cum)}</td>
     </tr>`;
   }).join('');
   document.getElementById('tbody').innerHTML = rows;
@@ -147,7 +148,7 @@ function render(data) {
   for (const t of data.trades) {
     const i = D.indexOf(t.date);
     if (i < 0) continue;
-    const pt = { coord: [t.date, data.etf1000[i]], value: t.action === 'buy' ? '买1000' : '买红利' };
+    const pt = { coord: [t.date, data.etf1000[i]], value: t.action === 'buy' ? '买1000' : '买红利低波' };
     (t.action === 'buy' ? buyPts : sellPts).push(pt);
   }
 
@@ -162,7 +163,7 @@ function render(data) {
       valueFormatter: v => (v == null ? '-' : v)
     },
     legend: {
-      data: ['平均股价(左轴)', '中证1000ETF(右轴)', '红利ETF(右轴)', 'DIF', 'DEA'],
+      data: ['平均股价(左轴)', '中证1000ETF(右轴)', '红利低波ETF(右轴)', 'DIF', 'DEA'],
       top: 6
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
@@ -211,7 +212,7 @@ function render(data) {
         }
       },
       {
-        name: '红利ETF(右轴)', type: 'line', data: data.etfdiv,
+        name: '红利低波ETF(右轴)', type: 'line', data: data.etfdiv,
         xAxisIndex: 0, yAxisIndex: 1,
         symbol: 'none', lineStyle: { width: 1.4, color: '#2ca02c' },
         itemStyle: { color: '#2ca02c' },

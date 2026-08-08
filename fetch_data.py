@@ -3,7 +3,7 @@
 """
 数据获取：
 - 平均股价 880003：通达信扩展行情（exhq），自动探测板块指数市场代码
-- ETF 512100.SH / 510880.SH：通达信标准行情（hq），上海市场 market=1
+- ETF 512100.SH / 512890.SH：通达信标准行情（hq），上海市场 market=1
 输出 CSV 到 data/ 目录
 """
 import sys
@@ -241,9 +241,9 @@ def main():
     df1000.to_csv(os.path.join(DATA_DIR, 'etf_512100_hfq.csv'))
     print('  %d 行  %s ~ %s' % (len(df1000), df1000.index[0].date(), df1000.index[-1].date()))
 
-    print('--- 拉取 510880.SH 红利ETF(后复权) ---')
-    dfdiv = fetch_etf_hfq('510880')
-    dfdiv.to_csv(os.path.join(DATA_DIR, 'etf_510880_hfq.csv'))
+    print('--- 拉取 512890.SH 红利低波ETF(后复权) ---')
+    dfdiv = fetch_etf_hfq('512890')
+    dfdiv.to_csv(os.path.join(DATA_DIR, 'etf_512890_hfq.csv'))
     print('  %d 行  %s ~ %s' % (len(dfdiv), dfdiv.index[0].date(), dfdiv.index[-1].date()))
 
     print('--- 拉取 880003 平均股价 ---')
