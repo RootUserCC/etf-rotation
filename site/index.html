@@ -32,6 +32,8 @@
   .tag.buy { background: #fde8e7; color: #d43f3a; }
   .tag.sell { background: #e6f4e4; color: #2ca02c; }
   td.neg { color: #2ca02c; } td.pos { color: #d43f3a; }
+  .ret-table th, .ret-table td { text-align: center; padding: 5px 6px; }
+  .ret-table td.year { font-weight: 600; background: #fafbfc; }
 </style>
 </head>
 <body>
@@ -43,12 +45,18 @@
 <div id="err">数据加载失败：请先运行 export_json.py 生成 site/data.json，并通过 启动.bat 访问（勿直接双击 html）。</div>
 <div id="chart"></div>
 <div class="table-wrap">
+  <h2>月度 / 年度收益（策略净值，含费用）</h2>
+  <div class="table-scroll">
+    <table class="ret-table" id="retTable"></table>
+  </div>
+</div>
+<div class="table-wrap">
   <h2>换仓明细（信号日收盘触发，次日开盘成交）</h2>
   <div class="table-scroll">
     <table>
       <thead>
         <tr><th>成交日期</th><th>操作</th><th>1000ETF收盘</th><th>红利ETF收盘</th><th>信号日</th>
-            <th>DIF</th><th>DEA</th><th>MACD柱</th></tr>
+            <th>DIF</th><th>DEA</th><th>MACD柱</th><th>区间收益</th><th>累计收益</th></tr>
       </thead>
       <tbody id="tbody"></tbody>
     </table>
@@ -62,14 +70,56 @@ fetch('data.json?_=' + Date.now()).then(r => {
 }).then(data => {
   document.getElementById('updated').textContent = '数据更新: ' + data.updated;
   render(data);
+  renderReturns(data);
   renderTable(data);
 }).catch(e => {
   document.getElementById('err').style.display = 'block';
   console.error(e);
 });
 
+// 月度/年度收益表：由净值序列按月末/年末净值环比计算
+function renderReturns(data) {
+  const D = data.dates, nav = data.nav_strat;
+  const monthLast = {}, yearLast = {};
+  D.forEach((d, i) => {
+    monthLast[d.slice(0, 7)] = nav[i];
+    yearLast[d.slice(0, 4)] = nav[i];
+  });
+  const mRet = {};
+  let prev = 1;
+  Object.keys(monthLast).sort().forEach(m => {
+    mRet[m] = monthLast[m] / prev - 1;
+    prev = monthLast[m];
+  });
+  const years = Object.keys(yearLast).sort();
+  const yRet = {};
+  prev = 1;
+  years.forEach(y => {
+    yRet[y] = yearLast[y] / prev - 1;
+    prev = yearLast[y];
+  });
+
+  const cell = v => v == null
+    ? '<td>-</td>'
+    : `<td class="${v < 0 ? 'neg' : 'pos'}">${(v * 100).toFixed(2)}%</td>`;
+  let html = '<thead><tr><th>年份</th>';
+  for (let m = 1; m <= 12; m++) html += `<th>${m}月</th>`;
+  html += '<th>全年</th></tr></thead><tbody>';
+  for (const y of years) {
+    html += `<tr><td class="year">${y}</td>`;
+    for (let m = 1; m <= 12; m++) {
+      const key = `${y}-${String(m).padStart(2, '0')}`;
+      html += cell(key in mRet ? mRet[key] : null);
+    }
+    html += cell(yRet[y]) + '</tr>';
+  }
+  html += '</tbody>';
+  document.getElementById('retTable').innerHTML = html;
+}
+
 function renderTable(data) {
   const fmt = v => (v == null ? '-' : Number(v).toFixed(3));
+  const pct = v => (v == null ? '-' : (v * 100).toFixed(2) + '%');
   const cls = v => (v < 0 ? 'neg' : 'pos');
   // 最新在前
   const rows = [...data.trades].reverse().map(t => {
@@ -81,6 +131,8 @@ function renderTable(data) {
       <td class="${cls(t.dif)}">${fmt(t.dif)}</td>
       <td class="${cls(t.dea)}">${fmt(t.dea)}</td>
       <td class="${cls(t.macdval)}">${fmt(t.macdval)}</td>
+      <td class="${cls(t.leg_ret)}">${pct(t.leg_ret)}</td>
+      <td class="${cls(t.cum_ret)}">${pct(t.cum_ret)}</td>
     </tr>`;
   }).join('');
   document.getElementById('tbody').innerHTML = rows;

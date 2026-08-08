@@ -24,13 +24,15 @@ def ema(s: pd.Series, n: int) -> pd.Series:
     return s.ewm(alpha=2.0 / (n + 1), adjust=False).mean()
 
 
-def calc_signals(close: pd.Series, sell_anywhere: bool = False) -> pd.DataFrame:
+def calc_signals(close: pd.Series, sell_anywhere: bool = False,
+                 fast: int = 12, slow: int = 26, sig_n: int = 9) -> pd.DataFrame:
     """按通达信 MACD 公式计算 DIF/DEA/MACDVAL 与拐点信号
     sell_anywhere=False: 原版，卖出要求 DIF>0
     sell_anywhere=True : 对称版，DIF 转降即切红利（零下也卖）
+    fast/slow/sig_n: MACD 参数，默认 12/26/9（方案B），方案C 用 17/34/9
     """
-    dif = ema(close, 12) - ema(close, 26)
-    dea = ema(dif, 9)
+    dif = ema(close, fast) - ema(close, slow)
+    dea = ema(dif, sig_n)
     macdval = (dif - dea) * 2
     dif_prev1 = dif.shift(1)
     dif_prev2 = dif.shift(2)
@@ -57,14 +59,17 @@ def annualized(nav: pd.Series) -> float:
 def run_backtest(avg: pd.DataFrame, etf1000: pd.DataFrame, etfdiv: pd.DataFrame,
                  fee: float = 0.0001, sell_anywhere: bool = False,
                  label: str = '轮动策略', start_date=None,
+                 fast: int = 12, slow: int = 26, sig_n: int = 9,
                  verbose: bool = True) -> dict:
     """
     avg/etf1000/etfdiv: index=日期, 列至少含 open/close
     信号基于 avg 的 close 在 T 日收盘产生，T+1 日以被切换 ETF 的 open 成交
     start_date: 仅统计该日期之后的区间（信号用全部历史计算，保证 DIF 预热）
+    fast/slow/sig_n: MACD 参数，默认 12/26/9（方案B），方案C 用 17/34/9
     返回结果字典：nav/trades/sig/hold1000/idx
     """
-    sig = calc_signals(avg['close'], sell_anywhere=sell_anywhere)
+    sig = calc_signals(avg['close'], sell_anywhere=sell_anywhere,
+                       fast=fast, slow=slow, sig_n=sig_n)
 
     # 对齐三只标的的交易日
     idx = etf1000.index.intersection(etfdiv.index).intersection(sig.index)
