@@ -517,6 +517,24 @@ function render(data) {
     }
   }
 
+  // MACD 四色柱（通达信口径）：红=MACD≥0，绿=MACD<0，红柱缩头变粉，绿柱缩头变黄
+  const cRed = [], cPink = [], cGreen = [], cYellow = [];
+  let prevM = null;
+  for (let i = 0; i < D.length; i++) {
+    const m = (data.dif[i] == null || data.dea[i] == null)
+      ? null : (data.dif[i] - data.dea[i]) * 2;
+    let r = null, p = null, g = null, y = null;
+    if (m != null) {
+      if (m >= 0) {
+        if (prevM != null && prevM > 0 && m < prevM) p = m; else r = m;
+      } else {
+        if (prevM != null && prevM < 0 && m > prevM) y = m; else g = m;
+      }
+    }
+    cRed.push(r); cPink.push(p); cGreen.push(g); cYellow.push(y);
+    prevM = m;
+  }
+
   const option = {
     animation: false,
     textStyle: { color: T.text },
@@ -536,8 +554,8 @@ function render(data) {
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     grid: [
-      { left: 62, right: 62, top: 44, height: '52%' },
-      { left: 62, right: 62, top: '67%', height: '15%' }
+      { left: 62, right: 62, top: 44, height: '45%' },
+      { left: 62, right: 62, top: '53%', height: '45%' }
     ],
     xAxis: [
       { type: 'category', data: D, gridIndex: 0, boundaryGap: false,
@@ -604,6 +622,18 @@ function render(data) {
         itemStyle: { color: T.etfdiv },
         sampling: 'lttb', large: true, largeThreshold: 400
       },
+      { name: 'MACD红', type: 'bar', data: cRed, xAxisIndex: 1, yAxisIndex: 2,
+        barWidth: 4, barGap: 0, itemStyle: { color: '#ef5350' },
+        tooltip: { show: false }, emphasis: { disabled: true } },
+      { name: 'MACD粉', type: 'bar', data: cPink, xAxisIndex: 1, yAxisIndex: 2,
+        barWidth: 4, barGap: 0, itemStyle: { color: '#2196f3' },
+        tooltip: { show: false }, emphasis: { disabled: true } },
+      { name: 'MACD绿', type: 'bar', data: cGreen, xAxisIndex: 1, yAxisIndex: 2,
+        barWidth: 4, barGap: 0, itemStyle: { color: '#4caf50' },
+        tooltip: { show: false }, emphasis: { disabled: true } },
+      { name: 'MACD黄', type: 'bar', data: cYellow, xAxisIndex: 1, yAxisIndex: 2,
+        barWidth: 4, barGap: 0, itemStyle: { color: '#fdd835' },
+        tooltip: { show: false }, emphasis: { disabled: true } },
       {
         name: 'DIF', type: 'line', data: data.dif,
         xAxisIndex: 1, yAxisIndex: 2,
