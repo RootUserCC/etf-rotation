@@ -1,58 +1,246 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="utf-8">
 <title>平均股价 · ETF轮动监控</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="echarts.min.js"></script>
 <style>
+  :root {
+    /* 深色主题（默认） */
+    --bg1: #0d1220;
+    --bg2: #161d2e;
+    --card: #1a2233;
+    --card2: #1e2739;
+    --row-alt: #1d2638;
+    --border: #27324a;
+    --border2: #33415e;
+    --text: #e8ecf3;
+    --muted: #8b95a8;
+    --faint: #5b6478;
+    --up: #ff6b6b;      /* 涨 · 红 */
+    --down: #3ddc97;    /* 跌 · 绿 */
+    --accent: #4d7cfe;
+    --accent-soft: rgba(77, 124, 254, 0.14);
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --hl-bg: rgba(255, 255, 255, 0.04);
+  }
+  [data-theme="light"] {
+    --bg1: #eef1f6;
+    --bg2: #f6f8fb;
+    --card: #ffffff;
+    --card2: #fbfcfe;
+    --row-alt: #f7f9fc;
+    --border: #e2e6ee;
+    --border2: #cfd6e2;
+    --text: #1d2733;
+    --muted: #667080;
+    --faint: #9aa3b3;
+    --up: #d43f3a;
+    --down: #2ca02c;
+    --accent: #3b6df0;
+    --accent-soft: rgba(59, 109, 240, 0.10);
+    --shadow: 0 6px 18px rgba(30, 40, 60, 0.08);
+    --hl-bg: rgba(20, 30, 60, 0.04);
+  }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f5f6f8; color: #333; }
-  header { padding: 14px 24px; background: #fff; border-bottom: 1px solid #e5e6eb;
-           display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
-  header h1 { font-size: 18px; font-weight: 600; }
-  header .meta { font-size: 12px; color: #999; }
-  .legend-tip { font-size: 12px; color: #666; }
-  .legend-tip b.r { color: #d43f3a; } .legend-tip b.g { color: #2ca02c; }
-  #chart { width: 100%; height: 68vh; min-height: 480px; background: #fff; }
-  #err { padding: 40px; text-align: center; color: #c00; display: none; }
-  .table-wrap { background: #fff; margin-top: 8px; padding: 12px 24px 24px; }
-  .table-wrap h2 { font-size: 15px; font-weight: 600; padding: 6px 0 10px; }
-  .table-scroll { max-height: 420px; overflow-y: auto; border: 1px solid #e5e6eb; border-radius: 4px; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: linear-gradient(160deg, var(--bg1) 0%, var(--bg2) 100%) fixed;
+    color: var(--text);
+    min-height: 100vh;
+    transition: background 0.3s, color 0.3s;
+  }
+
+  /* ---------- 顶栏 ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    padding: 12px 24px;
+    background: color-mix(in srgb, var(--card) 82%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .logo { width: 38px; height: 38px; border-radius: 10px; flex: none; }
+  .brand h1 { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; }
+  .brand .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 7px 14px; border-radius: 999px;
+    font-size: 13px;
+    background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    white-space: nowrap;
+  }
+  .status-pill b { font-weight: 700; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.r { background: var(--up); box-shadow: 0 0 8px var(--up); }
+  .dot.g { background: var(--down); box-shadow: 0 0 8px var(--down); }
+  .up { color: var(--up); }
+  .down { color: var(--down); }
+
+  .updated { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .btn {
+    border: 1px solid var(--border2); background: var(--card2);
+    color: var(--muted); width: 34px; height: 34px; border-radius: 9px;
+    cursor: pointer; font-size: 15px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .btn:hover { color: var(--text); border-color: var(--accent); transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+
+  /* ---------- 卡片 ---------- */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    margin: 16px 20px;
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 18px 4px;
+  }
+  .card-head h2 { font-size: 14px; font-weight: 600; }
+  .card-head .hint { font-size: 11px; color: var(--faint); }
+  #chart { width: 100%; height: 62vh; min-height: 440px; padding: 0 6px; }
+
+  /* ---------- KPI 卡片 ---------- */
+  .kpi-row { display: flex; gap: 14px; margin: 16px 20px; flex-wrap: wrap; }
+  .kpi-card {
+    flex: 1; min-width: 140px; max-width: 200px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 18px; box-shadow: var(--shadow);
+    transition: transform 0.12s;
+  }
+  .kpi-card:hover { transform: translateY(-2px); }
+  .kpi-card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .kpi-card .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .kpi-card .sub { font-size: 11px; color: var(--faint); margin-top: 2px; }
+
+  /* ---------- 加载 ---------- */
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border2);
+             border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #err { padding: 40px; text-align: center; color: var(--up); display: none; font-size: 14px; }
+
+  /* ---------- 表格 ---------- */
+  .table-scroll {
+    max-height: 420px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 10px; margin: 0 18px 18px;
+  }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  thead th { position: sticky; top: 0; background: #fafbfc; color: #666; font-weight: 600;
-             padding: 8px 10px; border-bottom: 1px solid #e5e6eb; text-align: right; z-index: 1; }
+  thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--card2); color: var(--muted);
+    font-weight: 600; padding: 9px 12px;
+    border-bottom: 1px solid var(--border); text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
   thead th:first-child, tbody td:first-child { text-align: left; }
-  tbody td { padding: 6px 10px; border-bottom: 1px solid #f2f3f5; text-align: right;
-             font-variant-numeric: tabular-nums; }
-  tbody tr:hover { background: #f7f8fa; }
-  tr.buy td:first-child { border-left: 3px solid #d43f3a; }
-  tr.sell td:first-child { border-left: 3px solid #2ca02c; }
-  .tag { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 11px; }
-  .tag.buy { background: #fde8e7; color: #d43f3a; }
-  .tag.sell { background: #e6f4e4; color: #2ca02c; }
-  td.neg { color: #2ca02c; } td.pos { color: #d43f3a; }
-  .ret-table th, .ret-table td { text-align: center; padding: 5px 6px; }
-  .ret-table td.year { font-weight: 600; background: #fafbfc; }
+  tbody td {
+    padding: 7px 12px; border-bottom: 1px solid var(--border);
+    text-align: right; color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  tbody tr:nth-child(even) { background: var(--row-alt); }
+  tbody tr:hover { background: var(--hl-bg); }
+  tr.buy td:first-child { border-left: 3px solid var(--up); }
+  tr.sell td:first-child { border-left: 3px solid var(--down); }
+
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 500; }
+  .tag.buy { background: color-mix(in srgb, var(--up) 14%, transparent); color: var(--up); }
+  .tag.sell { background: color-mix(in srgb, var(--down) 14%, transparent); color: var(--down); }
+  td.neg { color: var(--down); }
+  td.pos { color: var(--up); }
+
+  .ret-table th, .ret-table td { text-align: center; padding: 6px 7px; }
+  .ret-table td.year { font-weight: 600; background: var(--card2); position: sticky; left: 0; }
+  .ret-table td.pos, .ret-table td.neg { font-weight: 600; }
+  .ret-table td { min-width: 52px; }
+  .ret-table td.year { min-width: 58px; }
+
+  .table-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+  .table-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 5px; }
+  .table-scroll::-webkit-scrollbar-track { background: transparent; }
+
+  @media (max-width: 720px) {
+    .topbar { padding: 10px 14px; }
+    .card { margin: 12px; }
+    .brand .sub { display: none; }
+    #chart { height: 52vh; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>平均股价(880003) · 中证1000ETF / 红利低波ETF 轮动监控</h1>
-  <span class="legend-tip">▲<b class="r">买1000（卖红利低波）</b>　▼<b class="g">买红利低波（卖1000）</b>　粉色底纹=持有1000ETF区间</span>
-  <span class="meta" id="updated"></span>
+<header class="topbar">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 40 40" aria-hidden="true">
+      <defs>
+        <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#4d7cfe"/>
+          <stop offset="1" stop-color="#7a5cff"/>
+        </linearGradient>
+      </defs>
+      <rect width="40" height="40" rx="10" fill="url(#lg)"/>
+      <path d="M9 27 L17 18 L23 22 L31 12" stroke="#fff" stroke-width="2.6" fill="none"
+            stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="31" cy="12" r="2.6" fill="#fff"/>
+    </svg>
+    <div>
+      <h1>平均股价(880003) · ETF 轮动监控</h1>
+      <div class="sub">中证1000ETF ⇄ 红利低波ETF · 方案C 慢速DIF(17/34)</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="status-pill" id="status">加载中…</span>
+    <span class="updated" id="updated"></span>
+    <button class="btn" id="refreshBtn" title="刷新数据">⟳</button>
+    <button class="btn" id="themeBtn" title="切换主题">🌓</button>
+  </div>
 </header>
+
 <div id="err">数据加载失败：请先运行 export_json.py 生成 site/data.json，并通过 启动.bat 访问（勿直接双击 html）。</div>
-<div id="chart"></div>
-<div class="table-wrap">
-  <h2>月度 / 年度收益（策略净值，含费用）</h2>
+
+<div class="card">
+  <div class="card-head">
+    <h2>走势总览</h2>
+    <span class="hint">标记=换仓点（画在平均股价线上）：▲买1000（卖红利低波）　▼买红利低波（卖1000）　底纹=持有1000ETF区间 · 拖动下方滑块缩放</span>
+  </div>
+  <div id="chart"></div>
+</div>
+
+<div class="kpi-row" id="kpiRow">
+  <div class="kpi-card"><div class="label">累计收益</div><div class="value pos" id="kpiCum">-</div><div class="sub" id="kpiCumSub"></div></div>
+  <div class="kpi-card"><div class="label">年化收益</div><div class="value pos" id="kpiAnn">-</div><div class="sub" id="kpiAnnSub"></div></div>
+  <div class="kpi-card"><div class="label">最大回撤</div><div class="value down" id="kpiMDD">-</div><div class="sub" id="kpiMDDSub"></div></div>
+  <div class="kpi-card"><div class="label">当前回撤</div><div class="value down" id="kpiCurDD">-</div><div class="sub" id="kpiCurDDSub"></div></div>
+  <div class="kpi-card"><div class="label">胜率</div><div class="value" id="kpiWin">-</div><div class="sub" id="kpiWinSub"></div></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>月度 / 年度收益</h2>
+    <span class="hint">策略净值，含费用</span>
+  </div>
   <div class="table-scroll">
     <table class="ret-table" id="retTable"></table>
   </div>
 </div>
-<div class="table-wrap">
-  <h2>持仓明细（每行 = 一段完整持仓，最新在前；收益已含双边费用）</h2>
-  <div style="font-size:12px;color:#999;padding:0 0 8px">累计收益为复利连乘：本行累计 = (1+上行累计) × (1+本行收益) − 1，不是相加</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>持仓明细</h2>
+    <span class="hint">每行 = 一段完整持仓，最新在前；收益已含双边费用 · 累计收益为复利连乘：本行累计 = (1+上行累计) × (1+本行收益) − 1</span>
+  </div>
   <div class="table-scroll">
     <table>
       <thead>
@@ -65,12 +253,59 @@
 </div>
 
 <script>
+// ===== 主题 =====
+let chart = null;
+let lastData = null;
+
+function getTheme() {
+  const light = document.documentElement.dataset.theme === 'light';
+  if (light) return {
+    axisText: '#8a94a6', axisLine: '#d9dde5', splitLine: '#eceff4',
+    cross: '#9aa3b3', tooltipBg: '#ffffff', tooltipBorder: '#d9dde5',
+    avg: '#222222', etf1000: '#d43f3a', etfdiv: '#2ca02c',
+    dif: '#222222', dea: '#5b8ff9',
+    buy: '#d43f3a', sell: '#2ca02c',
+    area: 'rgba(212,63,58,0.07)',
+    zoomFill: 'rgba(59,109,240,0.16)', zoomHandle: '#3b6df0', text: '#1d2733',
+    muted: '#667080'
+  };
+  return {
+    axisText: '#7d8798', axisLine: '#2c3850', splitLine: '#232e44',
+    cross: '#8b95a8', tooltipBg: '#1a2233', tooltipBorder: '#2c3a55',
+    avg: '#e9edf4', etf1000: '#ff6b6b', etfdiv: '#3ddc97',
+    dif: '#c9d4e8', dea: '#fca311',
+    buy: '#ff6b6b', sell: '#3ddc97',
+    area: 'rgba(255,107,107,0.08)',
+    zoomFill: 'rgba(77,124,254,0.18)', zoomHandle: '#4d7cfe', text: '#e8ecf3',
+    muted: '#8b95a8'
+  };
+}
+
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const root = document.documentElement;
+  root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
+  if (lastData) render(lastData);
+});
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  const btn = document.getElementById('refreshBtn');
+  btn.style.transform = 'rotate(180deg)';
+  fetch('/api/update').then(r => r.json()).then(res => {
+    if (res.ok && !res.skipped) loadData();
+    setTimeout(() => btn.style.transform = '', 500);
+  }).catch(e => { console.error(e); btn.style.transform = ''; });
+});
+
+// ===== 数据加载 =====
 function loadData() {
   return fetch('data.json?_=' + Date.now()).then(r => {
     if (!r.ok) throw new Error(r.status);
     return r.json();
   }).then(data => {
+    lastData = data;
     document.getElementById('updated').textContent = '数据更新: ' + data.updated;
+    document.getElementById('err').style.display = 'none';
+    renderStatus(data);
+    renderKPIs(data);
     render(data);
     renderReturns(data);
     renderTable(data);
@@ -88,7 +323,93 @@ fetch('/api/update').then(r => r.json()).then(res => {
   if (!res.ok) console.error('数据更新失败: ' + (res.error || '未知错误'));
 }).catch(e => console.error('更新接口不可用: ' + e));
 
-// 月度/年度收益表：由净值序列按月末/年末净值环比计算
+// ===== 顶部状态摘要 =====
+function renderStatus(data) {
+  const el = document.getElementById('status');
+  const last = data.legs[data.legs.length - 1];
+
+  // 当前持仓
+  let hold = '';
+  if (last && last.open) {
+    const is1000 = last.asset === '1000';
+    const name = is1000 ? '中证1000ETF' : '红利低波ETF';
+    const pos = last.ret >= 0;
+    const arrow = pos ? '▲' : '▼';
+    const cls = pos ? 'up' : 'down';
+    hold = `<span class="dot ${is1000 ? 'r' : 'g'}"></span><b>${name}</b> ${arrow}<span class="${cls}">${(last.ret*100).toFixed(2)}%</span>`;
+  } else {
+    hold = '空仓';
+  }
+
+  // 平均股价最新值
+  const N = data.dates.length - 1;
+  const avgNow = data.avg[N];
+
+  // DIF 方向（最近5天趋势）
+  const lastDIF = data.dif[N], prevDIF = data.dif[N - 5] || data.dif[0];
+  const difDir = lastDIF > prevDIF ? '↑' : lastDIF < prevDIF ? '↓' : '→';
+  const difPos = lastDIF > 0 ? '零上' : '零下';
+
+  // 上次换仓时间
+  const lastTrade = data.trades[data.trades.length - 1];
+  const lastSig = lastTrade ? lastTrade.date : '-';
+
+  el.innerHTML = `${hold}　|　均价 ${avgNow?.toFixed(2)}　|　DIF ${lastDIF?.toFixed(4)}${difDir}(${difPos})　|　上次换仓 ${lastSig}`;
+}
+
+// ===== KPI 指标卡片 =====
+function renderKPIs(data) {
+  const nav = data.nav_strat, N = nav.length - 1;
+  const finalNAV = nav[N];
+
+  // 交易日数
+  const tradingDays = data.dates.length;
+  const years = tradingDays / 252;
+
+  // 累计收益
+  const cumRet = finalNAV - 1;
+  setKPI('kpiCum', (cumRet * 100).toFixed(2) + '%', cumRet > 0 ? 'pos' : 'down',
+    'kpiCumSub', `起止 ${data.dates[0]} → ${data.dates[N]}`);
+
+  // 年化
+  const annRet = Math.pow(finalNAV, 1 / years) - 1;
+  setKPI('kpiAnn', (annRet * 100).toFixed(2) + '%', annRet > 0 ? 'pos' : 'down',
+    'kpiAnnSub', `${data.dates.length} 个交易日`);
+
+  // 最大回撤
+  let p = nav[0], m = 0, pDate = 0;
+  for (let i = 1; i <= N; i++) {
+    if (nav[i] > p) { p = nav[i]; pDate = i; }
+    const d = (nav[i] / p) - 1;
+    if (d < m) m = d;
+  }
+  setKPI('kpiMDD', (m * 100).toFixed(2) + '%', 'down',
+    'kpiMDDSub', `峰 ${data.dates[pDate]}`);
+
+  // 当前回撤
+  let curPeak = nav[0], curIdx = 0;
+  for (let i = 1; i <= N; i++) { if (nav[i] > curPeak) { curPeak = nav[i]; curIdx = i; } }
+  const curDD = nav[N] / curPeak - 1;
+  setKPI('kpiCurDD', (curDD * 100).toFixed(2) + '%', curDD < 0 ? 'down' : 'pos',
+    'kpiCurDDSub', `距高点 ${data.dates[curIdx]} (${((N-curIdx)/252*12).toFixed(0)}月)`);
+
+  // 胜率
+  const wins = data.legs.filter(l => l.ret > 0).length;
+  const total = data.legs.length;
+  const winRate = total > 0 ? (wins / total * 100).toFixed(1) : '-';
+  const cls = total > 0 && wins / total >= 0.5 ? 'pos' : 'down';
+  setKPI('kpiWin', winRate + '%', cls, 'kpiWinSub', `${wins}/${total} 段盈利`);
+
+  function setKPI(id, val, cls, subId, subText) {
+    const el = document.getElementById(id);
+    const subEl = document.getElementById(subId);
+    el.textContent = val;
+    el.className = 'value ' + cls;
+    if (subEl) subEl.textContent = subText;
+  }
+}
+
+// ===== 月度/年度收益表：由净值序列按月末/年末净值环比计算 =====
 function renderReturns(data) {
   const D = data.dates, nav = data.nav_strat;
   const monthLast = {}, yearLast = {};
@@ -128,6 +449,7 @@ function renderReturns(data) {
   document.getElementById('retTable').innerHTML = html;
 }
 
+// ===== 持仓明细 =====
 function renderTable(data) {
   const fmt = v => (v == null ? '-' : Number(v).toFixed(3));
   const pct = v => (v == null ? '-' : (v * 100).toFixed(2) + '%');
@@ -149,108 +471,165 @@ function renderTable(data) {
   document.getElementById('tbody').innerHTML = rows;
 }
 
+// ===== 走势图 =====
 function render(data) {
-  const chart = echarts.init(document.getElementById('chart'));
+  const T = getTheme();
+  if (!chart) chart = echarts.init(document.getElementById('chart'));
   const D = data.dates;
 
-  // 买卖点 markPoint（画在 512100 线上）
-  const buyPts = [], sellPts = [];
+  // 换仓点 markPoint（画在平均股价线上；买1000 ⇄ 卖红利低波是同一操作，每处只标一次）
+  const marks = [];
   for (const t of data.trades) {
     const i = D.indexOf(t.date);
     if (i < 0) continue;
-    const pt = { coord: [t.date, data.etf1000[i]], value: t.action === 'buy' ? '买1000' : '买红利低波' };
-    (t.action === 'buy' ? buyPts : sellPts).push(pt);
+    const isBuy = t.action === 'buy'; // buy=买入中证1000（卖红利低波），sell=买入红利低波（卖1000）
+    marks.push({
+      coord: [t.date, data.avg[i]],
+      value: isBuy ? '买1000' : '买红利低波',
+      symbol: isBuy ? 'triangle' : 'arrow',
+      symbolRotate: isBuy ? 0 : 180,
+      itemStyle: { color: isBuy ? T.buy : T.sell },
+      label: { show: true, fontSize: 9, position: isBuy ? 'top' : 'bottom', color: isBuy ? T.buy : T.sell }
+    });
   }
 
   // 持仓区间 markArea
   const areas = data.hold_spans.map(s => [{ xAxis: s[0] }, { xAxis: s[1] }]);
 
+  // DIF 拐点标注（信号来源：在 DIF 线上标记所有局部极值点）
+  const difMarks = [];
+  for (let i = 1; i < D.length - 1; i++) {
+    const d0 = data.dif[i - 1], d1 = data.dif[i], d2 = data.dif[i + 1];
+    if (d0 == null || d1 == null || d2 == null) continue;
+    // 拐头向下 = 卖出信号（任意位置）
+    if (d0 < d1 && d1 > d2) {
+      difMarks.push({ coord: [D[i], d1], value: '拐↓', symbol: 'arrow', symbolRotate: 180,
+        symbolSize: 8, itemStyle: { color: T.sell },
+        label: { show: true, fontSize: 8, position: 'bottom', color: T.sell, distance: 4 } });
+    }
+    // 拐头向上 = 潜在买入（仅零轴下方是买入信号）
+    if (d0 > d1 && d1 < d2) {
+      const isBuy = d1 < 0;
+      difMarks.push({ coord: [D[i], d1], value: isBuy ? '拐↑买' : '拐↑',
+        symbol: 'triangle', symbolSize: 8,
+        itemStyle: { color: isBuy ? T.buy : T.faint || '#9aa3b3' },
+        label: { show: isBuy, fontSize: 8, position: 'top', color: T.buy, distance: 4 } });
+    }
+  }
+
   const option = {
     animation: false,
+    textStyle: { color: T.text },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'cross' },
+      axisPointer: { type: 'cross', lineStyle: { color: T.cross }, crossStyle: { color: T.cross } },
+      backgroundColor: T.tooltipBg,
+      borderColor: T.tooltipBorder,
+      borderWidth: 1,
       valueFormatter: v => (v == null ? '-' : v)
     },
     legend: {
       data: ['平均股价(左轴)', '中证1000ETF(右轴)', '红利低波ETF(右轴)', 'DIF', 'DEA'],
-      top: 6
+      top: 10,
+      textStyle: { color: T.muted, fontSize: 12 },
+      itemWidth: 16, itemHeight: 10
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     grid: [
-      { left: 60, right: 60, top: 40, height: '52%' },
-      { left: 60, right: 60, top: '66%', height: '16%' }
+      { left: 62, right: 62, top: 44, height: '52%' },
+      { left: 62, right: 62, top: '67%', height: '15%' }
     ],
     xAxis: [
-      { type: 'category', data: D, gridIndex: 0, boundaryGap: false },
+      { type: 'category', data: D, gridIndex: 0, boundaryGap: false,
+        axisLine: { lineStyle: { color: T.axisLine } },
+        axisLabel: { color: T.axisText } },
       { type: 'category', data: D, gridIndex: 1, boundaryGap: false, show: false }
     ],
     yAxis: [
       { type: 'value', gridIndex: 0, name: '平均股价(元)', scale: true,
-        splitLine: { lineStyle: { color: '#eee' } } },
-      { type: 'value', gridIndex: 0, name: 'ETF(后复权)', scale: true,
+        nameTextStyle: { color: T.muted },
+        axisLabel: { color: T.axisText },
+        splitLine: { lineStyle: { color: T.splitLine } } },
+      { type: 'value', gridIndex: 0, name: 'ETF(元)', scale: true,
+        nameTextStyle: { color: T.muted },
+        axisLabel: { color: T.axisText },
         splitLine: { show: false } },
       { type: 'value', gridIndex: 1, name: 'DIF', scale: true,
-        splitLine: { lineStyle: { color: '#f5f5f5' } } }
+        nameTextStyle: { color: T.muted },
+        axisLabel: { color: T.axisText },
+        splitLine: { lineStyle: { color: T.splitLine } } }
     ],
     dataZoom: [
       { type: 'inside', xAxisIndex: [0, 1], start: 70, end: 100 },
-      { type: 'slider', xAxisIndex: [0, 1], bottom: 8, height: 22, start: 70, end: 100 }
+      { type: 'slider', xAxisIndex: [0, 1], bottom: 8, height: 18, start: 70, end: 100,
+        borderColor: T.axisLine,
+        backgroundColor: 'transparent',
+        fillerColor: T.zoomFill,
+        handleStyle: { color: T.zoomHandle },
+        moveHandleStyle: { color: T.zoomHandle },
+        textStyle: { color: T.axisText },
+        dataBackground: { lineStyle: { color: T.splitLine }, areaStyle: { color: T.splitLine } }
+      }
     ],
     series: [
       {
         name: '平均股价(左轴)', type: 'line', data: data.avg,
         xAxisIndex: 0, yAxisIndex: 0,
-        symbol: 'none', lineStyle: { width: 1.4, color: '#222' },
-        itemStyle: { color: '#222' },
+        symbol: 'none', lineStyle: { width: 1.4, color: T.avg },
+        itemStyle: { color: T.avg },
+        sampling: 'lttb', large: true, largeThreshold: 400,
         markArea: {
           silent: true,
-          itemStyle: { color: 'rgba(212,63,58,0.07)' },
+          itemStyle: { color: T.area },
           data: areas
+        },
+        markPoint: {
+          symbol: 'triangle', symbolSize: 11,
+          itemStyle: { color: T.buy },
+          label: { show: true, fontSize: 9, position: 'top' },
+          data: marks
         }
       },
       {
         name: '中证1000ETF(右轴)', type: 'line', data: data.etf1000,
         xAxisIndex: 0, yAxisIndex: 1,
-        symbol: 'none', lineStyle: { width: 1.4, color: '#d43f3a' },
-        itemStyle: { color: '#d43f3a' },
-        markPoint: {
-          symbol: 'triangle', symbolSize: 11,
-          itemStyle: { color: '#d43f3a' },
-          label: { show: true, fontSize: 9, color: '#d43f3a', position: 'top' },
-          data: buyPts
-        }
+        symbol: 'none', lineStyle: { width: 1.4, color: T.etf1000 },
+        itemStyle: { color: T.etf1000 },
+        sampling: 'lttb', large: true, largeThreshold: 400
       },
       {
         name: '红利低波ETF(右轴)', type: 'line', data: data.etfdiv,
         xAxisIndex: 0, yAxisIndex: 1,
-        symbol: 'none', lineStyle: { width: 1.4, color: '#2ca02c' },
-        itemStyle: { color: '#2ca02c' },
-        markPoint: {
-          symbol: 'arrow', symbolSize: 11, symbolRotate: 180,
-          itemStyle: { color: '#2ca02c' },
-          label: { show: true, fontSize: 9, color: '#2ca02c', position: 'bottom' },
-          data: sellPts
-        }
+        symbol: 'none', lineStyle: { width: 1.4, color: T.etfdiv },
+        itemStyle: { color: T.etfdiv },
+        sampling: 'lttb', large: true, largeThreshold: 400
       },
       {
         name: 'DIF', type: 'line', data: data.dif,
         xAxisIndex: 1, yAxisIndex: 2,
-        symbol: 'none', lineStyle: { width: 1, color: '#222' },
-        itemStyle: { color: '#222' },
+        symbol: 'none', lineStyle: { width: 1, color: T.dif },
+        itemStyle: { color: T.dif },
+        sampling: 'lttb', large: true, largeThreshold: 200,
         markLine: { silent: true, symbol: 'none', data: [{ yAxis: 0 }],
-                    lineStyle: { color: '#aaa', type: 'dashed', width: 0.8 },
-                    label: { show: false } }
+                    lineStyle: { color: T.axisText, type: 'dashed', width: 0.8 },
+                    label: { show: false } },
+        markPoint: {
+          symbol: 'triangle', symbolSize: 8,
+          itemStyle: { color: T.buy },
+          label: { show: true, fontSize: 8 },
+          data: difMarks
+        }
       },
       {
         name: 'DEA', type: 'line', data: data.dea,
         xAxisIndex: 1, yAxisIndex: 2,
-        symbol: 'none', lineStyle: { width: 1, color: '#5b8ff9' },
-        itemStyle: { color: '#5b8ff9' }
+        symbol: 'none', lineStyle: { width: 1, color: T.dea },
+        itemStyle: { color: T.dea },
+        sampling: 'lttb', large: true, largeThreshold: 200
       }
     ]
   };
-  chart.setOption(option);
+  chart.setOption(option, true);
   window.addEventListener('resize', () => chart.resize());
 }
 </script>
