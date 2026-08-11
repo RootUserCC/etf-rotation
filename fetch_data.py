@@ -241,10 +241,20 @@ def main():
     df1000.to_csv(os.path.join(DATA_DIR, 'etf_512100_hfq.csv'))
     print('  %d 行  %s ~ %s' % (len(df1000), df1000.index[0].date(), df1000.index[-1].date()))
 
+    print('--- 拉取 512100.SH 中证1000ETF(不复权) ---')
+    df1000_raw = fetch_etf_hq('512100')
+    df1000_raw.to_csv(os.path.join(DATA_DIR, 'etf_512100.csv'))
+    print('  %d 行  %s ~ %s' % (len(df1000_raw), df1000_raw.index[0].date(), df1000_raw.index[-1].date()))
+
     print('--- 拉取 512890.SH 红利低波ETF(后复权) ---')
     dfdiv = fetch_etf_hfq('512890')
     dfdiv.to_csv(os.path.join(DATA_DIR, 'etf_512890_hfq.csv'))
     print('  %d 行  %s ~ %s' % (len(dfdiv), dfdiv.index[0].date(), dfdiv.index[-1].date()))
+
+    print('--- 拉取 512890.SH 红利低波ETF(不复权) ---')
+    dfdiv_raw = fetch_etf_hq('512890')
+    dfdiv_raw.to_csv(os.path.join(DATA_DIR, 'etf_512890.csv'))
+    print('  %d 行  %s ~ %s' % (len(dfdiv_raw), dfdiv_raw.index[0].date(), dfdiv_raw.index[-1].date()))
 
     print('--- 拉取 880003 平均股价 ---')
     dfavg = fetch_avg_price_hq()

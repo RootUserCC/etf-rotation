@@ -1,6 +1,4 @@
 $ErrorActionPreference = 'Stop'
-$settings = New-ScheduledTaskSettingsSet -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1)
-Set-ScheduledTask -TaskName 'ETFRotationWeb' -Settings $settings | Out-Null
-Start-ScheduledTask -TaskName 'ETFRotationWeb'
-Start-Sleep -Seconds 3
-Get-ScheduledTask -TaskName 'ETFRotationWeb' | Select-Object TaskName, State
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '15:10'
+Set-ScheduledTask -TaskName 'ETFRotationDataUpdate' -Trigger $trigger | Out-Null
+Get-ScheduledTaskInfo -TaskName 'ETFRotationDataUpdate' | Select-Object NextRunTime

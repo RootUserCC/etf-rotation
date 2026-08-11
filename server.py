@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent
 SITE_DIR = ROOT / "site"
 PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 LOG_FILE = ROOT / "update.log"
-PORT = 8001
+PORT = 8002
 THROTTLE_SEC = 30 * 60  # 30 分钟内只更新一次
 
 _update_lock = threading.Lock()
