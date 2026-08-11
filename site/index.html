@@ -248,8 +248,20 @@
   .ret-table th, .ret-table td { text-align: center; padding: 6px 7px; }
   .ret-table td.year { font-weight: 600; background: var(--card2); position: sticky; left: 0; }
   .ret-table td.pos, .ret-table td.neg { font-weight: 600; }
-  .ret-table td { min-width: 52px; }
+  .ret-table td { min-width: 64px; }
   .ret-table td.year { min-width: 58px; }
+  /* 贡献分解小字 */
+  .ret-table .brk {
+    display: flex; justify-content: center; gap: 6px;
+    font-size: 9px; font-weight: 400; color: var(--faint);
+    margin-top: 2px; white-space: nowrap;
+  }
+  .ret-table .brk .neg { color: var(--down); }
+  /* 总汇总行 */
+  .ret-table tr.sum-row td {
+    border-top: 2px solid var(--border2);
+    background: var(--card2); font-weight: 700;
+  }
 
   .table-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
   .table-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 5px; }
@@ -303,7 +315,7 @@
 <div class="card">
   <div class="card-head">
     <h2>走势总览</h2>
-    <span class="hint">标记=换仓点（画在平均股价线上）：▲买1000（卖红利低波）　▼买红利低波（卖1000）　底纹=持有1000ETF区间 · 拖动下方滑块缩放</span>
+    <span class="hint">▲买1000（卖红利低波）　▼买红利低波（卖1000）　底纹=持仓区间（红=1000ETF / 绿=红利低波），区间顶部数字=该段收益 · 拖动下方滑块缩放</span>
   </div>
   <div id="chart"></div>
 </div>
@@ -311,7 +323,7 @@
 <div class="card">
   <div class="card-head">
     <h2>月度 / 年度收益</h2>
-    <span class="hint">策略净值，含费用</span>
+    <span class="hint">策略净值，含费用 · 小字=该期 1000ETF / 红利低波 贡献（乘积口径：期收益 = (1+1000贡献)×(1+红利贡献) − 1，切换日归入新仓位）</span>
   </div>
   <div class="table-scroll">
     <table class="ret-table" id="retTable"></table>
@@ -347,7 +359,7 @@ function getTheme() {
     avg: '#222222', etf1000: '#d43f3a', etfdiv: '#2ca02c',
     dif: '#222222', dea: '#5b8ff9',
     buy: '#d43f3a', sell: '#2ca02c',
-    area: 'rgba(212,63,58,0.07)',
+    area: 'rgba(212,63,58,0.07)', areaDiv: 'rgba(44,160,44,0.045)',
     zoomFill: 'rgba(59,109,240,0.16)', zoomHandle: '#3b6df0', text: '#1d2733',
     muted: '#667080'
   };
@@ -357,7 +369,7 @@ function getTheme() {
     avg: '#e9edf4', etf1000: '#ff6b6b', etfdiv: '#3ddc97',
     dif: '#c9d4e8', dea: '#fca311',
     buy: '#ff6b6b', sell: '#3ddc97',
-    area: 'rgba(255,107,107,0.08)',
+    area: 'rgba(255,107,107,0.08)', areaDiv: 'rgba(61,220,151,0.05)',
     zoomFill: 'rgba(77,124,254,0.18)', zoomHandle: '#4d7cfe', text: '#e8ecf3',
     muted: '#8b95a8'
   };
@@ -485,8 +497,29 @@ function renderKPIs(data) {
 }
 
 // ===== 月度/年度收益表：由净值序列按月末/年末净值环比计算 =====
+// 每格下方小字 = 该期 1000ETF / 红利低波 各自的贡献（乘积口径：期收益 = (1+1000贡献)×(1+红利贡献) − 1，
+// 切换日收益归入新仓位）；年末两列与末行汇总同理
 function renderReturns(data) {
   const D = data.dates, nav = data.nav_strat;
+
+  // 持有1000ETF的日期集合（由持仓区间还原）
+  const holdSet = new Set();
+  (data.hold_spans || []).forEach(([s, e]) => {
+    let on = false;
+    for (const d of D) { if (d === s) on = true; if (on) holdSet.add(d); if (d === e) on = false; }
+  });
+
+  // 日收益因子按持仓资产归集：月份/年份/全期 -> 1000因子积、红利因子积
+  const agg = {};
+  for (let i = 1; i < D.length; i++) {
+    const f = nav[i] / nav[i - 1];
+    const is1000 = holdSet.has(D[i]);
+    for (const k of [D[i].slice(0, 7), D[i].slice(0, 4), 'ALL']) {
+      if (!agg[k]) agg[k] = { p1000: 1, pdiv: 1 };
+      if (is1000) agg[k].p1000 *= f; else agg[k].pdiv *= f;
+    }
+  }
+
   const monthLast = {}, yearLast = {};
   D.forEach((d, i) => {
     monthLast[d.slice(0, 7)] = nav[i];
@@ -506,24 +539,42 @@ function renderReturns(data) {
     prev = yearLast[y];
   });
 
+  const fmtContrib = x => (x >= 0 ? '+' : '') + (x * 100).toFixed(1) + '%';
+  // 贡献小字：该期 1000ETF / 红利低波 分别贡献
+  const brkHtml = key => {
+    const a = agg[key];
+    if (!a) return '';
+    const c1000 = a.p1000 - 1, cdiv = a.pdiv - 1;
+    return `<div class="brk"><span class="${c1000 < 0 ? 'neg' : ''}">1000 ${fmtContrib(c1000)}</span>` +
+           `<span class="${cdiv < 0 ? 'neg' : ''}">红利 ${fmtContrib(cdiv)}</span></div>`;
+  };
   // 月度收益热力图：颜色深浅随收益幅度变化
-  const cell = v => {
+  const cell = (key, v) => {
     if (v == null) return '<td>-</td>';
     const intensity = Math.min(0.38, Math.abs(v) * 2.2);
     const color = v < 0 ? 'var(--down)' : 'var(--up)';
-    return `<td class="${v < 0 ? 'neg' : 'pos'}" style="background: color-mix(in srgb, ${color} ${(intensity * 100).toFixed(0)}%, transparent)">${(v * 100).toFixed(2)}%</td>`;
+    return `<td class="${v < 0 ? 'neg' : 'pos'}" style="background: color-mix(in srgb, ${color} ${(intensity * 100).toFixed(0)}%, transparent)">${(v * 100).toFixed(2)}%${brkHtml(key)}</td>`;
   };
+  // 年度贡献列（不带热力底色）
+  const contribTd = v => `<td class="${v < 0 ? 'neg' : 'pos'}">${(v * 100).toFixed(2)}%</td>`;
+
   let html = '<thead><tr><th>年份</th>';
   for (let m = 1; m <= 12; m++) html += `<th>${m}月</th>`;
-  html += '<th>全年</th></tr></thead><tbody>';
+  html += '<th>全年</th><th>1000贡献</th><th>红利贡献</th></tr></thead><tbody>';
   for (const y of years) {
     html += `<tr><td class="year">${y}</td>`;
     for (let m = 1; m <= 12; m++) {
       const key = `${y}-${String(m).padStart(2, '0')}`;
-      html += cell(key in mRet ? mRet[key] : null);
+      html += cell(key, key in mRet ? mRet[key] : null);
     }
-    html += cell(yRet[y]) + '</tr>';
+    const ay = agg[y] || { p1000: 1, pdiv: 1 };
+    html += cell(y, yRet[y]) + contribTd(ay.p1000 - 1) + contribTd(ay.pdiv - 1) + '</tr>';
   }
+  // 总汇总行：全期收益与两只ETF的总贡献
+  const A = agg['ALL'] || { p1000: 1, pdiv: 1 };
+  const totalRet = nav[nav.length - 1] / nav[0] - 1;
+  html += `<tr class="sum-row"><td class="year">汇总</td>${'<td></td>'.repeat(12)}` +
+          contribTd(totalRet) + contribTd(A.p1000 - 1) + contribTd(A.pdiv - 1) + '</tr>';
   html += '</tbody>';
   document.getElementById('retTable').innerHTML = html;
 }
@@ -572,29 +623,51 @@ function render(data) {
     });
   }
 
-  // 持仓区间 markArea
-  const areas = data.hold_spans.map(s => [{ xAxis: s[0] }, { xAxis: s[1] }]);
+  // 持仓区间 markArea：每段持仓（legs）一块底纹，红=持有1000ETF，绿=持有红利低波ETF
+  // 区间顶部标注该段收益率（持有中的为浮动盈亏）
+  const areas = data.legs.map(l => {
+    const end = l.sell_date || D[D.length - 1];
+    const is1000 = l.asset === '1000';
+    const wide = (l.days || 0) >= 6;      // 太短的区间不标数字，避免文字重叠（明细表里仍可见）
+    return [
+      { xAxis: l.buy_date,
+        itemStyle: { color: is1000 ? T.area : T.areaDiv },
+        label: { show: wide, position: 'insideTop', fontSize: 10, fontWeight: 600,
+                 color: l.ret >= 0 ? T.buy : T.sell,
+                 formatter: (l.ret >= 0 ? '+' : '') + (l.ret * 100).toFixed(1) + '%' + (l.open ? '(浮)' : '') } },
+      { xAxis: end }
+    ];
+  });
 
-  // DIF 拐点标注（信号来源：在 DIF 线上标记所有局部极值点）
-  const difMarks = [];
+  // DIF 拐点标注：只标真正触发换仓的拐点（与主图换仓点一一对应：信号日T收盘拐头，T+1开盘成交）
+  // 其余未触发操作的局部拐点画成灰色小点作背景参考
+  const sigIdx = new Set(data.trades.map(t => D.indexOf(t.sig_date)).filter(i => i >= 0));
+  const difBgMarks = [];
   for (let i = 1; i < D.length - 1; i++) {
     const d0 = data.dif[i - 1], d1 = data.dif[i], d2 = data.dif[i + 1];
     if (d0 == null || d1 == null || d2 == null) continue;
-    // 拐头向下 = 卖出信号（任意位置）
-    if (d0 < d1 && d1 > d2) {
-      difMarks.push({ coord: [D[i], d1], value: '拐↓', symbol: 'arrow', symbolRotate: 180,
-        symbolSize: 8, itemStyle: { color: T.sell },
-        label: { show: true, fontSize: 8, position: 'bottom', color: T.sell, distance: 4 } });
-    }
-    // 拐头向上 = 潜在买入（仅零轴下方是买入信号）
-    if (d0 > d1 && d1 < d2) {
-      const isBuy = d1 < 0;
-      difMarks.push({ coord: [D[i], d1], value: isBuy ? '拐↑买' : '拐↑',
-        symbol: 'triangle', symbolSize: 8,
-        itemStyle: { color: isBuy ? T.buy : T.faint || '#9aa3b3' },
-        label: { show: isBuy, fontSize: 8, position: 'top', color: T.buy, distance: 4 } });
+    if (sigIdx.has(i)) continue;                       // 信号拐点单独标，不重复
+    const isMax = d0 < d1 && d1 > d2, isMin = d0 > d1 && d1 < d2;
+    if (isMax || isMin) {
+      difBgMarks.push({ coord: [D[i], d1], symbol: 'circle', symbolSize: 3.5,
+        itemStyle: { color: T.axisText, opacity: 0.45 }, label: { show: false } });
     }
   }
+  const difMarks = data.trades.map(t => {
+    const i = D.indexOf(t.sig_date);
+    if (i < 0) return null;
+    const isBuy = t.action === 'buy';                  // buy=买入中证1000，sell=买入红利低波
+    return {
+      coord: [t.sig_date, data.dif[i]],
+      value: isBuy ? '买1000' : '买红利低波',
+      symbol: isBuy ? 'triangle' : 'arrow',
+      symbolRotate: isBuy ? 0 : 180,
+      symbolSize: 10,
+      itemStyle: { color: isBuy ? T.buy : T.sell },
+      label: { show: true, fontSize: 9, position: isBuy ? 'top' : 'bottom',
+               color: isBuy ? T.buy : T.sell, distance: 4 }
+    };
+  }).filter(Boolean).concat(difBgMarks);
 
   // MACD 四色柱（通达信口径）：红=MACD≥0，绿=MACD<0，红柱缩头变粉，绿柱缩头变黄
   const cRed = [], cPink = [], cGreen = [], cYellow = [];
