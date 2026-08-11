@@ -76,7 +76,7 @@ run_backtest.py      # 单次回测入口
 fetch_avg_compute.py # 备选：从全市场个股自行合成平均股价
 optimize.py          # 方案C 参数寻优（网格搜索 MACD 参数/信号类型/买卖阈值）
 site/index.html      # 监控页面（ECharts 已本地化，可离线）
-启动.bat             # 启动网站 http://127.0.0.1:8002/
+启动.bat             # 启动网站 http://127.0.0.1:8001/
 更新数据.bat         # 每日收盘后更新数据并重新导出
 ```
 

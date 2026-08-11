@@ -21,8 +21,12 @@
     --up: #ff6b6b;      /* 涨 · 红 */
     --down: #3ddc97;    /* 跌 · 绿 */
     --accent: #4d7cfe;
+    --accent2: #7a5cff;
+    --amber: #f5a623;
     --accent-soft: rgba(77, 124, 254, 0.14);
+    --grad: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
     --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --shadow-lift: 0 14px 34px rgba(0, 0, 0, 0.45);
     --hl-bg: rgba(255, 255, 255, 0.04);
   }
   [data-theme="light"] {
@@ -39,8 +43,12 @@
     --up: #d43f3a;
     --down: #2ca02c;
     --accent: #3b6df0;
+    --accent2: #7a5cff;
+    --amber: #e8940a;
     --accent-soft: rgba(59, 109, 240, 0.10);
+    --grad: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
     --shadow: 0 6px 18px rgba(30, 40, 60, 0.08);
+    --shadow-lift: 0 12px 28px rgba(30, 40, 60, 0.14);
     --hl-bg: rgba(20, 30, 60, 0.04);
   }
 
@@ -51,7 +59,27 @@
     color: var(--text);
     min-height: 100vh;
     transition: background 0.3s, color 0.3s;
+    padding-bottom: 28px;
   }
+  /* 背景装饰光晕 */
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(600px 320px at 12% -4%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+      radial-gradient(700px 380px at 92% 0%, color-mix(in srgb, var(--accent2) 12%, transparent), transparent 70%);
+  }
+
+  /* 入场动画 */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .kpi-card, .card { animation: fadeUp 0.4s ease both; }
+  .kpi-card:nth-child(1) { animation-delay: 0.02s; }
+  .kpi-card:nth-child(2) { animation-delay: 0.06s; }
+  .kpi-card:nth-child(3) { animation-delay: 0.10s; }
+  .kpi-card:nth-child(4) { animation-delay: 0.14s; }
+  .card { animation-delay: 0.18s; }
 
   /* ---------- 顶栏 ---------- */
   .topbar {
@@ -60,11 +88,20 @@
     gap: 16px; flex-wrap: wrap;
     padding: 12px 24px;
     background: color-mix(in srgb, var(--card) 82%, transparent);
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(12px) saturate(1.3);
     border-bottom: 1px solid var(--border);
   }
+  /* 顶栏底部渐变亮线 */
+  .topbar::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent) 30%, var(--accent2) 70%, transparent);
+    opacity: 0.55;
+  }
   .brand { display: flex; align-items: center; gap: 12px; }
-  .brand .logo { width: 38px; height: 38px; border-radius: 10px; flex: none; }
+  .brand .logo {
+    width: 38px; height: 38px; border-radius: 10px; flex: none;
+    filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--accent) 45%, transparent));
+  }
   .brand h1 { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; }
   .brand .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -90,41 +127,85 @@
     color: var(--muted); width: 34px; height: 34px; border-radius: 9px;
     cursor: pointer; font-size: 15px; line-height: 1;
     display: inline-flex; align-items: center; justify-content: center;
-    transition: all 0.15s;
+    transition: all 0.18s;
   }
-  .btn:hover { color: var(--text); border-color: var(--accent); transform: translateY(-1px); }
+  .btn:hover {
+    color: #fff; border-color: transparent; background: var(--grad);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
   .btn:active { transform: translateY(0); }
 
   /* ---------- 卡片 ---------- */
   .card {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: 16px;
     box-shadow: var(--shadow);
     margin: 16px 20px;
     overflow: hidden;
+    transition: box-shadow 0.2s;
   }
+  .card:hover { box-shadow: var(--shadow-lift); }
   .card-head {
     display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
     flex-wrap: wrap;
-    padding: 14px 18px 4px;
+    padding: 14px 18px 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
   }
-  .card-head h2 { font-size: 14px; font-weight: 600; }
+  .card-head h2 {
+    font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  /* 标题前的渐变标记 */
+  .card-head h2::before {
+    content: ''; width: 4px; height: 14px; border-radius: 2px;
+    background: var(--grad); flex: none;
+  }
   .card-head .hint { font-size: 11px; color: var(--faint); }
   #chart { width: 100%; height: 62vh; min-height: 440px; padding: 0 6px; }
 
   /* ---------- KPI 卡片 ---------- */
   .kpi-row { display: flex; gap: 14px; margin: 16px 20px; flex-wrap: wrap; }
   .kpi-card {
-    flex: 1; min-width: 140px; max-width: 200px;
+    position: relative; overflow: hidden;
+    flex: 1; min-width: 150px; max-width: 220px;
     background: var(--card); border: 1px solid var(--border);
-    border-radius: 12px; padding: 14px 18px; box-shadow: var(--shadow);
-    transition: transform 0.12s;
+    border-radius: 14px; padding: 16px 20px 14px; box-shadow: var(--shadow);
+    transition: transform 0.15s, box-shadow 0.2s;
   }
-  .kpi-card:hover { transform: translateY(-2px); }
-  .kpi-card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-  .kpi-card .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .kpi-card .sub { font-size: 11px; color: var(--faint); margin-top: 2px; }
+  /* 顶部渐变细条 */
+  .kpi-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--grad); opacity: 0.9;
+  }
+  .kpi-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); }
+  .kpi-card .label { font-size: 11px; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.5px; }
+  .kpi-card .value { font-size: 25px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .kpi-card .sub { font-size: 11px; color: var(--faint); margin-top: 4px; }
+  /* 右上角装饰图标 */
+  .kpi-card .icon {
+    position: absolute; top: 12px; right: 14px;
+    width: 34px; height: 34px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  /* 首卡（累计收益）渐变高亮 */
+  .kpi-card.featured {
+    background: var(--grad); border-color: transparent; color: #fff;
+    box-shadow: 0 10px 26px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .kpi-card.featured::before { display: none; }
+  .kpi-card.featured .label { color: rgba(255, 255, 255, 0.85); }
+  .kpi-card.featured .value { color: #fff !important; }
+  .kpi-card.featured .sub { color: rgba(255, 255, 255, 0.7); }
+  .kpi-card.featured .icon {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.25);
+  }
 
   /* ---------- 加载 ---------- */
   .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border2);
@@ -141,18 +222,20 @@
   thead th {
     position: sticky; top: 0; z-index: 1;
     background: var(--card2); color: var(--muted);
-    font-weight: 600; padding: 9px 12px;
-    border-bottom: 1px solid var(--border); text-align: right;
+    font-weight: 600; padding: 10px 12px;
+    border-bottom: 2px solid var(--border2); text-align: right;
     font-variant-numeric: tabular-nums;
+    letter-spacing: 0.3px;
   }
   thead th:first-child, tbody td:first-child { text-align: left; }
   tbody td {
-    padding: 7px 12px; border-bottom: 1px solid var(--border);
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
     text-align: right; color: var(--text);
     font-variant-numeric: tabular-nums;
   }
   tbody tr:nth-child(even) { background: var(--row-alt); }
-  tbody tr:hover { background: var(--hl-bg); }
+  tbody tr { transition: background 0.12s; }
+  tbody tr:hover { background: var(--accent-soft); }
   tr.buy td:first-child { border-left: 3px solid var(--up); }
   tr.sell td:first-child { border-left: 3px solid var(--down); }
 
@@ -210,20 +293,19 @@
 
 <div id="err">数据加载失败：请先运行 export_json.py 生成 site/data.json，并通过 启动.bat 访问（勿直接双击 html）。</div>
 
+<div class="kpi-row" id="kpiRow">
+  <div class="kpi-card featured"><span class="icon">💰</span><div class="label">累计收益</div><div class="value pos" id="kpiCum">-</div><div class="sub" id="kpiCumSub"></div></div>
+  <div class="kpi-card"><span class="icon">📈</span><div class="label">年化收益</div><div class="value pos" id="kpiAnn">-</div><div class="sub" id="kpiAnnSub"></div></div>
+  <div class="kpi-card"><span class="icon">📉</span><div class="label">最大回撤</div><div class="value down" id="kpiMDD">-</div><div class="sub" id="kpiMDDSub"></div></div>
+  <div class="kpi-card"><span class="icon">⏱️</span><div class="label">当前回撤</div><div class="value down" id="kpiCurDD">-</div><div class="sub" id="kpiCurDDSub"></div></div>
+</div>
+
 <div class="card">
   <div class="card-head">
     <h2>走势总览</h2>
     <span class="hint">标记=换仓点（画在平均股价线上）：▲买1000（卖红利低波）　▼买红利低波（卖1000）　底纹=持有1000ETF区间 · 拖动下方滑块缩放</span>
   </div>
   <div id="chart"></div>
-</div>
-
-<div class="kpi-row" id="kpiRow">
-  <div class="kpi-card"><div class="label">累计收益</div><div class="value pos" id="kpiCum">-</div><div class="sub" id="kpiCumSub"></div></div>
-  <div class="kpi-card"><div class="label">年化收益</div><div class="value pos" id="kpiAnn">-</div><div class="sub" id="kpiAnnSub"></div></div>
-  <div class="kpi-card"><div class="label">最大回撤</div><div class="value down" id="kpiMDD">-</div><div class="sub" id="kpiMDDSub"></div></div>
-  <div class="kpi-card"><div class="label">当前回撤</div><div class="value down" id="kpiCurDD">-</div><div class="sub" id="kpiCurDDSub"></div></div>
-  <div class="kpi-card"><div class="label">胜率</div><div class="value" id="kpiWin">-</div><div class="sub" id="kpiWinSub"></div></div>
 </div>
 
 <div class="card">
@@ -393,13 +475,6 @@ function renderKPIs(data) {
   setKPI('kpiCurDD', (curDD * 100).toFixed(2) + '%', curDD < 0 ? 'down' : 'pos',
     'kpiCurDDSub', `距高点 ${data.dates[curIdx]} (${((N-curIdx)/252*12).toFixed(0)}月)`);
 
-  // 胜率
-  const wins = data.legs.filter(l => l.ret > 0).length;
-  const total = data.legs.length;
-  const winRate = total > 0 ? (wins / total * 100).toFixed(1) : '-';
-  const cls = total > 0 && wins / total >= 0.5 ? 'pos' : 'down';
-  setKPI('kpiWin', winRate + '%', cls, 'kpiWinSub', `${wins}/${total} 段盈利`);
-
   function setKPI(id, val, cls, subId, subText) {
     const el = document.getElementById(id);
     const subEl = document.getElementById(subId);
@@ -431,9 +506,13 @@ function renderReturns(data) {
     prev = yearLast[y];
   });
 
-  const cell = v => v == null
-    ? '<td>-</td>'
-    : `<td class="${v < 0 ? 'neg' : 'pos'}">${(v * 100).toFixed(2)}%</td>`;
+  // 月度收益热力图：颜色深浅随收益幅度变化
+  const cell = v => {
+    if (v == null) return '<td>-</td>';
+    const intensity = Math.min(0.38, Math.abs(v) * 2.2);
+    const color = v < 0 ? 'var(--down)' : 'var(--up)';
+    return `<td class="${v < 0 ? 'neg' : 'pos'}" style="background: color-mix(in srgb, ${color} ${(intensity * 100).toFixed(0)}%, transparent)">${(v * 100).toFixed(2)}%</td>`;
+  };
   let html = '<thead><tr><th>年份</th>';
   for (let m = 1; m <= 12; m++) html += `<th>${m}月</th>`;
   html += '<th>全年</th></tr></thead><tbody>';
