@@ -182,6 +182,31 @@
   }
   .kpi-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); }
   .kpi-card .label { font-size: 11px; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.5px; }
+  /* 自定义天数输入框 */
+  .kpi-card input[type="number"] {
+    width: 46px; padding: 1px 2px 1px 6px;
+    border: 1px solid var(--border2); border-radius: 6px;
+    background: var(--card2); color: var(--text);
+    font-size: 11px; font-family: inherit;
+    outline: none; text-align: center;
+  }
+  .kpi-card input[type="number"]:focus { border-color: var(--accent); }
+  .kpi-card input[type="date"] {
+    padding: 1px 4px;
+    border: 1px solid var(--border2); border-radius: 6px;
+    background: var(--card2); color: var(--text);
+    font-size: 10px; font-family: inherit;
+    outline: none;
+  }
+  .kpi-card input[type="date"]:focus { border-color: var(--accent); }
+  .kpi-card .date-row { margin-top: 5px; }
+  /* 信号状态卡文字较长，字号略收 */
+  #kpiSig { font-size: 20px; white-space: nowrap; }
+  /* 最近更新卡显示完整时间戳，字号再收 */
+  #kpiUpd { font-size: 15px; white-space: nowrap; }
+  /* 原生控件配色跟随主题（深色下日期选择器图标可见） */
+  :root { color-scheme: dark; }
+  [data-theme="light"] { color-scheme: light; }
   .kpi-card .value { font-size: 25px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.15; }
   .kpi-card .sub { font-size: 11px; color: var(--faint); margin-top: 4px; }
   /* 右上角装饰图标 */
@@ -310,6 +335,11 @@
   <div class="kpi-card"><span class="icon">📈</span><div class="label">年化收益</div><div class="value pos" id="kpiAnn">-</div><div class="sub" id="kpiAnnSub"></div></div>
   <div class="kpi-card"><span class="icon">📉</span><div class="label">最大回撤</div><div class="value down" id="kpiMDD">-</div><div class="sub" id="kpiMDDSub"></div></div>
   <div class="kpi-card"><span class="icon">⏱️</span><div class="label">当前回撤</div><div class="value down" id="kpiCurDD">-</div><div class="sub" id="kpiCurDDSub"></div></div>
+  <div class="kpi-card"><span class="icon">🗓️</span><div class="label">近 <input type="number" id="kpiDays" value="5" min="1" max="9999"> 日收益</div><div class="value" id="kpiCustom">-</div><div class="sub" id="kpiCustomSub"></div><div class="sub date-row">或自 <input type="date" id="kpiDate"> 起</div></div>
+  <div class="kpi-card"><span class="icon">📅</span><div class="label">今年收益</div><div class="value" id="kpiYTD">-</div><div class="sub" id="kpiYTDSub"></div></div>
+  <div class="kpi-card"><span class="icon">⚖️</span><div class="label">超额收益</div><div class="value" id="kpiEx">-</div><div class="sub" id="kpiExSub"></div></div>
+  <div class="kpi-card"><span class="icon">🚦</span><div class="label">信号状态</div><div class="value" id="kpiSig">-</div><div class="sub" id="kpiSigSub"></div></div>
+  <div class="kpi-card"><span class="icon">🕒</span><div class="label">最近更新</div><div class="value" id="kpiUpd">-</div><div class="sub" id="kpiUpdSub"></div></div>
 </div>
 
 <div class="card">
@@ -487,6 +517,44 @@ function renderKPIs(data) {
   setKPI('kpiCurDD', (curDD * 100).toFixed(2) + '%', curDD < 0 ? 'down' : 'pos',
     'kpiCurDDSub', `距高点 ${data.dates[curIdx]} (${((N-curIdx)/252*12).toFixed(0)}月)`);
 
+  // 自定义：近 N 个交易日收益
+  updateCustomKPI(data);
+
+  // 今年收益（YTD）：相对去年最后一个交易日净值
+  const year = data.dates[N].slice(0, 4);
+  const iY = data.dates.findIndex(d => d.slice(0, 4) === year);
+  const ytd = nav[N] / (iY > 0 ? nav[iY - 1] : nav[0]) - 1;
+  setKPI('kpiYTD', (ytd >= 0 ? '+' : '') + (ytd * 100).toFixed(2) + '%', ytd >= 0 ? 'pos' : 'down',
+    'kpiYTDSub', `${data.dates[iY]} → ${data.dates[N]}`);
+
+  // 超额收益：策略 vs 中证1000ETF纯持有（后复权）；值=年化超额，小字=累计超额
+  const h = data.etf1000_hfq;
+  const holdCum = h[N] / h[0] - 1;
+  const holdAnn = Math.pow(1 + holdCum, 1 / years) - 1;
+  const exAnn = annRet - holdAnn;
+  setKPI('kpiEx', (exAnn >= 0 ? '+' : '') + (exAnn * 100).toFixed(2) + '%', exAnn >= 0 ? 'pos' : 'down',
+    'kpiExSub', `年化超额 · 累计超额 ${((cumRet - holdCum) * 100).toFixed(0)}pp vs 1000持有`);
+
+  // 信号状态：DIF 零上/零下 + 连续升/降天数
+  const dif = data.dif;
+  let upDays = 0, downDays = 0;
+  for (let i = N; i > 0; i--) {
+    if (dif[i] > dif[i - 1]) { if (downDays) break; upDays++; }
+    else if (dif[i] < dif[i - 1]) { if (upDays) break; downDays++; }
+    else break;
+  }
+  const below = dif[N] < 0;
+  const streak = upDays ? `连升${upDays}天` : downDays ? `连降${downDays}天` : '走平';
+  let sigHint = `DIF ${dif[N].toFixed(3)}`;
+  if (below && upDays) sigHint += ' · 零下回升，留意买点';
+  else if (downDays) sigHint += ' · 拐头向下即卖出信号';
+  setKPI('kpiSig', `${below ? '零下' : '零上'} ${streak}`, downDays ? 'down' : 'pos',
+    'kpiSigSub', sigHint);
+
+  // 最近更新：数据导出时间，小字=行情数据截止交易日
+  setKPI('kpiUpd', data.updated || '-', '',
+    'kpiUpdSub', `数据截至 ${data.dates[N]}`);
+
   function setKPI(id, val, cls, subId, subText) {
     const el = document.getElementById(id);
     const subEl = document.getElementById(subId);
@@ -495,6 +563,43 @@ function renderKPIs(data) {
     if (subEl) subEl.textContent = subText;
   }
 }
+
+// ===== 自定义区间收益（近 N 个交易日，或自某日起） =====
+let customMode = 'days';          // 最后操作哪个输入框就按哪个算
+function updateCustomKPI(data) {
+  const nav = data.nav_strat, N = nav.length - 1;
+  const daysInput = document.getElementById('kpiDays');
+  const dateInput = document.getElementById('kpiDate');
+  // 日期选择范围 = 回测区间
+  if (!dateInput.min) { dateInput.min = data.dates[0]; dateInput.max = data.dates[N]; }
+
+  let i0;
+  if (customMode === 'date' && dateInput.value) {
+    i0 = data.dates.findIndex(d => d >= dateInput.value);   // 顺延到首个交易日
+    if (i0 < 0) i0 = N;
+    daysInput.value = N - i0;                               // 同步天数显示
+  } else {
+    customMode = 'days';
+    let d = parseInt(daysInput.value, 10);
+    if (isNaN(d) || d < 1) d = 1;
+    if (d > N) d = N;
+    i0 = N - d;
+    dateInput.value = data.dates[i0];                       // 同步日期显示
+  }
+  const ret = nav[N] / nav[i0] - 1;
+  const el = document.getElementById('kpiCustom');
+  el.textContent = (ret >= 0 ? '+' : '') + (ret * 100).toFixed(2) + '%';
+  el.className = 'value ' + (ret >= 0 ? 'pos' : 'down');
+  document.getElementById('kpiCustomSub').textContent = `${data.dates[i0]} → ${data.dates[N]}`;
+}
+document.getElementById('kpiDays').addEventListener('input', () => {
+  customMode = 'days';
+  if (lastData) updateCustomKPI(lastData);
+});
+document.getElementById('kpiDate').addEventListener('change', () => {
+  customMode = 'date';
+  if (lastData) updateCustomKPI(lastData);
+});
 
 // ===== 月度/年度收益表：由净值序列按月末/年末净值环比计算 =====
 // 每格下方小字 = 该期 1000ETF / 红利低波 各自的贡献（乘积口径：期收益 = (1+1000贡献)×(1+红利贡献) − 1，
@@ -696,7 +801,35 @@ function render(data) {
       backgroundColor: T.tooltipBg,
       borderColor: T.tooltipBorder,
       borderWidth: 1,
-      valueFormatter: v => (v == null ? '-' : v)
+      valueFormatter: v => (v == null ? '-' : v),
+      formatter: params => {
+        const date = params && params.length ? params[0].axisValue : '';
+        const i = D.indexOf(date);
+        if (i < 0) return date;
+        // 日涨跌幅：ETF 用后复权序列计算（避免除权日缺口失真），价格仍显示不复权真实价
+        const pct = (arr, base) => {
+          if (i <= 0 || arr[i] == null || base[i - 1] == null) return '';
+          const p = (base[i] / base[i - 1] - 1) * 100;
+          const c = p >= 0 ? T.buy : T.sell;
+          return ` <span style="color:${c}">${p >= 0 ? '+' : ''}${p.toFixed(2)}%</span>`;
+        };
+        const rows = [
+          ['平均股价', data.avg, data.avg, T.avg, 2],
+          ['中证1000ETF', data.etf1000, data.etf1000_hfq, T.etf1000, 3],
+          ['红利低波ETF', data.etfdiv, data.etfdiv_hfq, T.etfdiv, 3]
+        ];
+        let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+        for (const [name, arr, base, color, dp] of rows) {
+          const v = arr[i];
+          html += `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;`
+                + `background:${color};margin-right:5px"></span>${name}: `
+                + `<b>${v == null ? '-' : v.toFixed(dp)}</b>${pct(arr, base)}</div>`;
+        }
+        const dif = data.dif[i], dea = data.dea[i];
+        html += `<div style="margin-top:4px;color:${T.muted}">DIF ${dif == null ? '-' : dif.toFixed(4)}`
+              + `　DEA ${dea == null ? '-' : dea.toFixed(4)}</div>`;
+        return html;
+      }
     },
     legend: {
       data: ['平均股价(左轴)', '中证1000ETF(右轴)', '红利低波ETF(右轴)', 'DIF', 'DEA'],

@@ -1,9 +1,8 @@
 @echo off
-chcp 65001 >nul
 cd /d %~dp0
-echo [1/2] æ›´æ–°è¡Œæƒ…æ•°æ®...
-.venv\Scripts\python fetch_data.py || (echo æ•°æ®æ›´æ–°å¤±è´¥ & pause & exit /b 1)
-echo [2/2] ç”Ÿæˆç½‘ç«™æ•°æ®...
-.venv\Scripts\python export_json.py || (echo å¯¼å‡ºå¤±è´¥ & pause & exit /b 1)
-echo å®Œæˆï¼Œåˆ·æ–°ç½‘é¡µå³å¯çœ‹åˆ°æœ€æ–°æ•°æ®ã€‚
+echo [1/2] ¸üĞÂĞĞÇéÊı¾İ...
+.venv\Scripts\python fetch_data.py || (echo Êı¾İ¸üĞÂÊ§°Ü & pause & exit /b 1)
+echo [2/2] Éú³ÉÍøÕ¾Êı¾İ...
+.venv\Scripts\python export_json.py || (echo µ¼³öÊ§°Ü & pause & exit /b 1)
+echo Íê³É£¬Ë¢ĞÂÍøÒ³¼´¿É¿´µ½×îĞÂÊı¾İ¡£
 pause

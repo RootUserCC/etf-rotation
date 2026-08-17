@@ -1,17 +1,16 @@
 @echo off
-chcp 65001 >nul
 cd /d %~dp0
 
-echo [1/3] æ¸…ç† 8001 ç«¯å£çš„æ—§æœåŠ¡å™¨è¿›ç¨‹...
+echo [1/3] ÇåÀí 8001 ¶Ë¿ÚµÄ¾É·şÎñÆ÷½ø³Ì...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr /C:"127.0.0.1:8001 " ^| findstr "LISTENING"') do (
     taskkill /F /PID %%a >nul 2>&1
 )
 
-echo [2/3] å¯åŠ¨æœåŠ¡å™¨ï¼ˆæœ€å°åŒ–çª—å£è¿è¡Œï¼‰...
-start "ETFè½®åŠ¨æœåŠ¡å™¨" /min .venv\Scripts\python server.py
+echo [2/3] Í¨¹ı¼Æ»®ÈÎÎñºóÌ¨Æô¶¯·şÎñÆ÷£¨ÎŞ´°¿Ú£¬¹Ø±ÕÈÎºÎÖÕ¶Ë¶¼²»Ó°Ïì£©...
+schtasks /run /tn ETFRotationWeb >nul
 
-echo [3/3] ç­‰å¾…æœåŠ¡å™¨å°±ç»ª...
-timeout /t 2 /nobreak >nul
+echo [3/3] µÈ´ı·şÎñÆ÷¾ÍĞ÷...
+ping 127.0.0.1 -n 4 >nul
 
-echo æ‰“å¼€ç›‘æ§é¡µé¢ http://127.0.0.1:8001/
+echo ´ò¿ª¼à¿ØÒ³Ãæ http://127.0.0.1:8001/
 start "" http://127.0.0.1:8001/

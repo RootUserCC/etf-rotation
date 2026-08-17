@@ -1,9 +1,8 @@
 @echo off
-chcp 65001 >nul
 cd /d %~dp0
-echo [%date% %time%] å¼€å§‹æ›´æ–° >> update.log
+echo [%date% %time%] ¿ªÊ¼¸üÐÂ >> update.log
 .venv\Scripts\python fetch_data.py >> update.log 2>&1
-if errorlevel 1 (echo [%date% %time%] æ•°æ®æ›´æ–°å¤±è´¥ >> update.log & exit /b 1)
+if errorlevel 1 (echo [%date% %time%] Êý¾Ý¸üÐÂÊ§°Ü >> update.log & exit /b 1)
 .venv\Scripts\python export_json.py >> update.log 2>&1
-if errorlevel 1 (echo [%date% %time%] å¯¼å‡ºå¤±è´¥ >> update.log & exit /b 1)
-echo [%date% %time%] å®Œæˆ >> update.log
+if errorlevel 1 (echo [%date% %time%] µ¼³öÊ§°Ü >> update.log & exit /b 1)
+echo [%date% %time%] Íê³É >> update.log

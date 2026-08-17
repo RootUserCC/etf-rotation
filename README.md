@@ -76,9 +76,16 @@ run_backtest.py      # 单次回测入口
 fetch_avg_compute.py # 备选：从全市场个股自行合成平均股价
 optimize.py          # 方案C 参数寻优（网格搜索 MACD 参数/信号类型/买卖阈值）
 site/index.html      # 监控页面（ECharts 已本地化，可离线）
-启动.bat             # 启动网站 http://127.0.0.1:8001/
+server.py            # 网站服务器（静态文件 + /api/update 触发数据更新）
+run_server.pyw       # server.py 的无窗口启动引导（供计划任务/启动.bat 调用）
+启动.bat             # 启动网站 http://127.0.0.1:8001/（经计划任务无窗口后台运行）
 更新数据.bat         # 每日收盘后更新数据并重新导出
+register_tasks.ps1   # 注册计划任务：ETFRotationWeb 开机自启 + ETFRotationDataUpdate 工作日 15:10 更新
 ```
+
+开机自启由计划任务 `ETFRotationWeb` 实现：登录时以 base 解释器的 `pythonw.exe`
+运行 `run_server.pyw`，全程无窗口，关闭任何终端都不会影响网站；
+勿改用 `.venv\Scripts\pythonw.exe`（uv 转发器会拉起带终端窗口的 python.exe 子进程）。
 
 ## 环境
 
