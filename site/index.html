@@ -165,6 +165,7 @@
   }
   .card-head .hint { font-size: 11px; color: var(--faint); }
   #chart { width: 100%; height: 62vh; min-height: 440px; padding: 0 6px; }
+  #dailyChart { width: 100%; height: 240px; padding: 0 6px; }
 
   /* ---------- KPI 卡片 ---------- */
   .kpi-row { display: flex; gap: 14px; margin: 16px 20px; flex-wrap: wrap; }
@@ -317,7 +318,7 @@
     </svg>
     <div>
       <h1>平均股价(880003) · ETF 轮动监控</h1>
-      <div class="sub">中证1000ETF ⇄ 红利低波ETF · 方案C 慢速DIF(17/34)</div>
+      <div class="sub">中证2000增强ETF ⇄ 红利低波ETF · 方案C 慢速DIF(17/34)</div>
     </div>
   </div>
   <div class="topbar-right">
@@ -345,7 +346,7 @@
 <div class="card">
   <div class="card-head">
     <h2>走势总览</h2>
-    <span class="hint">▲买1000（卖红利低波）　▼买红利低波（卖1000）　底纹=持仓区间（红=1000ETF / 绿=红利低波），区间顶部数字=该段收益 · 拖动下方滑块缩放</span>
+    <span class="hint">▲买进攻（卖红利低波）　▼买红利低波（卖进攻）　底纹=持仓区间（红=进攻仓 / 绿=红利低波），区间顶部数字=该段收益 · 拖动下方滑块缩放　｜　口径：进攻仓 2024-06-28 起为中证2000增强ETF(159552)，此前为中证1000ETF(512100)</span>
   </div>
   <div id="chart"></div>
 </div>
@@ -353,11 +354,19 @@
 <div class="card">
   <div class="card-head">
     <h2>月度 / 年度收益</h2>
-    <span class="hint">策略净值，含费用 · 小字=该期 1000ETF / 红利低波 贡献（乘积口径：期收益 = (1+1000贡献)×(1+红利贡献) − 1，切换日归入新仓位）</span>
+    <span class="hint">策略净值，含费用 · 小字=该期 进攻仓 / 红利低波 贡献（乘积口径：期收益 = (1+进攻贡献)×(1+红利贡献) − 1，切换日归入新仓位）</span>
   </div>
   <div class="table-scroll">
     <table class="ret-table" id="retTable"></table>
   </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>每日收益</h2>
+    <span class="hint" id="dailyStats"></span>
+  </div>
+  <div id="dailyChart"></div>
 </div>
 
 <div class="card">
@@ -379,6 +388,7 @@
 <script>
 // ===== 主题 =====
 let chart = null;
+let dailyChart = null;
 let lastData = null;
 
 function getTheme() {
@@ -386,7 +396,7 @@ function getTheme() {
   if (light) return {
     axisText: '#8a94a6', axisLine: '#d9dde5', splitLine: '#eceff4',
     cross: '#9aa3b3', tooltipBg: '#ffffff', tooltipBorder: '#d9dde5',
-    avg: '#222222', etf1000: '#d43f3a', etfdiv: '#2ca02c',
+    avg: '#222222', etf1000: '#d43f3a', etfdiv: '#2ca02c', etf2000e: '#e8940a',
     dif: '#222222', dea: '#5b8ff9',
     buy: '#d43f3a', sell: '#2ca02c',
     area: 'rgba(212,63,58,0.07)', areaDiv: 'rgba(44,160,44,0.045)',
@@ -396,7 +406,7 @@ function getTheme() {
   return {
     axisText: '#7d8798', axisLine: '#2c3850', splitLine: '#232e44',
     cross: '#8b95a8', tooltipBg: '#1a2233', tooltipBorder: '#2c3a55',
-    avg: '#e9edf4', etf1000: '#ff6b6b', etfdiv: '#3ddc97',
+    avg: '#e9edf4', etf1000: '#ff6b6b', etfdiv: '#3ddc97', etf2000e: '#f5a623',
     dif: '#c9d4e8', dea: '#fca311',
     buy: '#ff6b6b', sell: '#3ddc97',
     area: 'rgba(255,107,107,0.08)', areaDiv: 'rgba(61,220,151,0.05)',
@@ -408,7 +418,7 @@ function getTheme() {
 document.getElementById('themeBtn').addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
-  if (lastData) render(lastData);
+  if (lastData) { render(lastData); renderDaily(lastData); }
 });
 document.getElementById('refreshBtn').addEventListener('click', () => {
   const btn = document.getElementById('refreshBtn');
@@ -432,6 +442,7 @@ function loadData() {
     renderKPIs(data);
     render(data);
     renderReturns(data);
+    renderDaily(data);
     renderTable(data);
   }).catch(e => {
     document.getElementById('err').style.display = 'block';
@@ -456,7 +467,7 @@ function renderStatus(data) {
   let hold = '';
   if (last && last.open) {
     const is1000 = last.asset === '1000';
-    const name = is1000 ? '中证1000ETF' : '红利低波ETF';
+    const name = last.asset_name || (is1000 ? '中证1000ETF' : '红利低波ETF');
     const pos = last.ret >= 0;
     const arrow = pos ? '▲' : '▼';
     const cls = pos ? 'up' : 'down';
@@ -602,12 +613,12 @@ document.getElementById('kpiDate').addEventListener('change', () => {
 });
 
 // ===== 月度/年度收益表：由净值序列按月末/年末净值环比计算 =====
-// 每格下方小字 = 该期 1000ETF / 红利低波 各自的贡献（乘积口径：期收益 = (1+1000贡献)×(1+红利贡献) − 1，
+// 每格下方小字 = 该期 进攻仓 / 红利低波 各自的贡献（乘积口径：期收益 = (1+进攻贡献)×(1+防守贡献) − 1，
 // 切换日收益归入新仓位）；年末两列与末行汇总同理
 function renderReturns(data) {
   const D = data.dates, nav = data.nav_strat;
 
-  // 持有1000ETF的日期集合（由持仓区间还原）
+  // 持有进攻仓的日期集合（由持仓区间还原）
   const holdSet = new Set();
   (data.hold_spans || []).forEach(([s, e]) => {
     let on = false;
@@ -645,13 +656,13 @@ function renderReturns(data) {
   });
 
   const fmtContrib = x => (x >= 0 ? '+' : '') + (x * 100).toFixed(1) + '%';
-  // 贡献小字：该期 1000ETF / 红利低波 分别贡献
+  // 贡献小字：该期 进攻仓 / 红利低波 分别贡献（进攻仓 2024-06-28 起为159552，此前为512100）
   const brkHtml = key => {
     const a = agg[key];
     if (!a) return '';
     const c1000 = a.p1000 - 1, cdiv = a.pdiv - 1;
-    return `<div class="brk"><span class="${c1000 < 0 ? 'neg' : ''}">1000 ${fmtContrib(c1000)}</span>` +
-           `<span class="${cdiv < 0 ? 'neg' : ''}">红利 ${fmtContrib(cdiv)}</span></div>`;
+    return `<div class="brk"><span class="${c1000 < 0 ? 'neg' : ''}">进攻 ${fmtContrib(c1000)}</span>` +
+           `<span class="${cdiv < 0 ? 'neg' : ''}">防守 ${fmtContrib(cdiv)}</span></div>`;
   };
   // 月度收益热力图：颜色深浅随收益幅度变化
   const cell = (key, v) => {
@@ -665,7 +676,7 @@ function renderReturns(data) {
 
   let html = '<thead><tr><th>年份</th>';
   for (let m = 1; m <= 12; m++) html += `<th>${m}月</th>`;
-  html += '<th>全年</th><th>1000贡献</th><th>红利贡献</th></tr></thead><tbody>';
+  html += '<th>全年</th><th>进攻贡献</th><th>防守贡献</th></tr></thead><tbody>';
   for (const y of years) {
     html += `<tr><td class="year">${y}</td>`;
     for (let m = 1; m <= 12; m++) {
@@ -684,6 +695,83 @@ function renderReturns(data) {
   document.getElementById('retTable').innerHTML = html;
 }
 
+// ===== 每日收益：由策略净值序列计算日收益，红涨绿跌柱状图 =====
+function renderDaily(data) {
+  const T = getTheme();
+  if (!dailyChart) dailyChart = echarts.init(document.getElementById('dailyChart'));
+  const D = data.dates, nav = data.nav_strat;
+  const rets = [null];
+  for (let i = 1; i < D.length; i++) rets.push(+((nav[i] / nav[i - 1] - 1) * 100).toFixed(2));
+
+  // 每日持仓（由持仓区间还原），tooltip 显示用
+  const holdArr = new Array(D.length).fill('红利低波');
+  (data.hold_spans || []).forEach(([s, e]) => {
+    let on = false;
+    for (let i = 0; i < D.length; i++) {
+      if (D[i] === s) on = true;
+      if (on) holdArr[i] = '进攻仓';
+      if (D[i] === e) on = false;
+    }
+  });
+
+  // 统计：胜率 / 平均 / 单日极值
+  const vals = rets.slice(1).filter(v => v != null);
+  const win = vals.filter(v => v > 0).length;
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const mx = Math.max(...vals), mn = Math.min(...vals);
+  document.getElementById('dailyStats').textContent =
+    `策略净值日收益（含费用）· 共 ${vals.length} 个交易日 · 胜率 ${(win / vals.length * 100).toFixed(1)}%` +
+    ` · 日均 ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}% · 单日最大 +${mx.toFixed(2)}% / ${mn.toFixed(2)}%`;
+
+  dailyChart.setOption({
+    animation: false,
+    textStyle: { color: T.text },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      backgroundColor: T.tooltipBg,
+      borderColor: T.tooltipBorder,
+      borderWidth: 1,
+      formatter: params => {
+        const p = params && params[0];
+        if (!p) return '';
+        const i = p.dataIndex, v = rets[i];
+        if (v == null) return D[i];
+        const c = v >= 0 ? T.buy : T.sell;
+        return `<div style="font-weight:600;margin-bottom:4px">${D[i]}</div>`
+             + `<div>日收益: <span style="color:${c};font-weight:600">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span></div>`
+             + `<div>持仓: ${holdArr[i]}</div>`
+             + `<div>净值: ${nav[i].toFixed(4)}</div>`;
+      }
+    },
+    grid: { left: 62, right: 30, top: 16, bottom: 46 },
+    xAxis: { type: 'category', data: D,
+      axisLine: { lineStyle: { color: T.axisLine } },
+      axisLabel: { color: T.axisText } },
+    yAxis: { type: 'value', scale: true,
+      axisLabel: { color: T.axisText, formatter: '{value}%' },
+      splitLine: { lineStyle: { color: T.splitLine } } },
+    dataZoom: [
+      { type: 'inside', start: 85, end: 100 },
+      { type: 'slider', bottom: 8, height: 16, start: 85, end: 100,
+        borderColor: T.axisLine,
+        backgroundColor: 'transparent',
+        fillerColor: T.zoomFill,
+        handleStyle: { color: T.zoomHandle },
+        moveHandleStyle: { color: T.zoomHandle },
+        textStyle: { color: T.axisText },
+        dataBackground: { lineStyle: { color: T.splitLine }, areaStyle: { color: T.splitLine } } }
+    ],
+    series: [{
+      name: '日收益', type: 'bar', data: rets,
+      itemStyle: { color: p => (p.value == null || p.value >= 0) ? T.buy : T.sell },
+      large: true, largeThreshold: 400
+    }]
+  }, true);
+  dailyChart.resize();
+}
+window.addEventListener('resize', () => { if (dailyChart) dailyChart.resize(); });
+
 // ===== 持仓明细 =====
 function renderTable(data) {
   const fmt = v => (v == null ? '-' : Number(v).toFixed(3));
@@ -692,7 +780,7 @@ function renderTable(data) {
   // 最新在前；每行一段完整持仓，持有中的显示浮动盈亏
   const rows = [...data.legs].reverse().map(l => {
     const tag = l.asset === '1000'
-      ? '<span class="tag buy">中证1000ETF</span>'
+      ? `<span class="tag buy">${l.asset_name || '中证1000ETF'}</span>`
       : '<span class="tag sell">红利低波ETF</span>';
     return `<tr class="${l.asset === '1000' ? 'buy' : 'sell'}">
       <td>${tag}</td>
@@ -712,15 +800,17 @@ function render(data) {
   if (!chart) chart = echarts.init(document.getElementById('chart'));
   const D = data.dates;
 
-  // 换仓点 markPoint（画在平均股价线上；买1000 ⇄ 卖红利低波是同一操作，每处只标一次）
+  // 换仓点 markPoint（画在平均股价线上；买进攻 ⇄ 卖红利低波是同一操作，每处只标一次）
+  // 买入标注按成交日实际进攻标的：2024-06-28 前='买1000'，之后='买2000增'
+  const buyLabel = t => (t.asset_name && t.asset_name.indexOf('2000') >= 0) ? '买2000增' : '买1000';
   const marks = [];
   for (const t of data.trades) {
     const i = D.indexOf(t.date);
     if (i < 0) continue;
-    const isBuy = t.action === 'buy'; // buy=买入中证1000（卖红利低波），sell=买入红利低波（卖1000）
+    const isBuy = t.action === 'buy'; // buy=买入进攻仓（卖红利低波），sell=买入红利低波（卖进攻仓）
     marks.push({
       coord: [t.date, data.avg[i]],
-      value: isBuy ? '买1000' : '买红利低波',
+      value: isBuy ? buyLabel(t) : '买红利低波',
       symbol: isBuy ? 'triangle' : 'arrow',
       symbolRotate: isBuy ? 0 : 180,
       itemStyle: { color: isBuy ? T.buy : T.sell },
@@ -728,7 +818,7 @@ function render(data) {
     });
   }
 
-  // 持仓区间 markArea：每段持仓（legs）一块底纹，红=持有1000ETF，绿=持有红利低波ETF
+  // 持仓区间 markArea：每段持仓（legs）一块底纹，红=持有进攻仓，绿=持有红利低波ETF
   // 区间顶部标注该段收益率（持有中的为浮动盈亏）
   const areas = data.legs.map(l => {
     const end = l.sell_date || D[D.length - 1];
@@ -761,10 +851,10 @@ function render(data) {
   const difMarks = data.trades.map(t => {
     const i = D.indexOf(t.sig_date);
     if (i < 0) return null;
-    const isBuy = t.action === 'buy';                  // buy=买入中证1000，sell=买入红利低波
+    const isBuy = t.action === 'buy';                  // buy=买入进攻仓，sell=买入红利低波
     return {
       coord: [t.sig_date, data.dif[i]],
-      value: isBuy ? '买1000' : '买红利低波',
+      value: isBuy ? buyLabel(t) : '买红利低波',
       symbol: isBuy ? 'triangle' : 'arrow',
       symbolRotate: isBuy ? 0 : 180,
       symbolSize: 10,
@@ -815,6 +905,7 @@ function render(data) {
         };
         const rows = [
           ['平均股价', data.avg, data.avg, T.avg, 2],
+          ['中证2000增强', data.etf2000e, data.etf2000e_hfq, T.etf2000e, 3],
           ['中证1000ETF', data.etf1000, data.etf1000_hfq, T.etf1000, 3],
           ['红利低波ETF', data.etfdiv, data.etfdiv_hfq, T.etfdiv, 3]
         ];
@@ -832,7 +923,7 @@ function render(data) {
       }
     },
     legend: {
-      data: ['平均股价(左轴)', '中证1000ETF(右轴)', '红利低波ETF(右轴)', 'DIF', 'DEA'],
+      data: ['平均股价(左轴)', '中证2000增强ETF(右轴)', '中证1000ETF(右轴)', '红利低波ETF(右轴)', 'DIF', 'DEA'],
       top: 10,
       textStyle: { color: T.muted, fontSize: 12 },
       itemWidth: 16, itemHeight: 10
@@ -894,10 +985,18 @@ function render(data) {
         }
       },
       {
+        name: '中证2000增强ETF(右轴)', type: 'line', data: data.etf2000e,
+        xAxisIndex: 0, yAxisIndex: 1,
+        symbol: 'none', lineStyle: { width: 1.6, color: T.etf2000e },
+        itemStyle: { color: T.etf2000e },
+        sampling: 'lttb', large: true, largeThreshold: 400
+      },
+      {
+        // 512100 保留作历史基准：细线半透明
         name: '中证1000ETF(右轴)', type: 'line', data: data.etf1000,
         xAxisIndex: 0, yAxisIndex: 1,
-        symbol: 'none', lineStyle: { width: 1.4, color: T.etf1000 },
-        itemStyle: { color: T.etf1000 },
+        symbol: 'none', lineStyle: { width: 0.9, color: T.etf1000, opacity: 0.45 },
+        itemStyle: { color: T.etf1000, opacity: 0.45 },
         sampling: 'lttb', large: true, largeThreshold: 400
       },
       {

@@ -4,6 +4,7 @@
 数据获取：
 - 平均股价 880003：通达信扩展行情（exhq），自动探测板块指数市场代码
 - ETF 512100.SH / 512890.SH：通达信标准行情（hq），上海市场 market=1
+- ETF 159552.SZ 中证2000增强（进攻仓新标的，2024-06-28 上市）：深圳市场 market=0
 输出 CSV 到 data/ 目录
 """
 import sys
@@ -53,11 +54,11 @@ def _connect_hq(api):
     raise RuntimeError('无可用 hq 服务器')
 
 
-def _fetch_bars(api, code: str, total: int = 8000):
+def _fetch_bars(api, code: str, total: int = 8000, market: int = 1):
     rows = []
     start = 0
     while len(rows) < total:
-        batch = api.get_security_bars(9, 1, code, start, 800)
+        batch = api.get_security_bars(9, market, code, start, 800)
         if not batch:
             break
         rows = batch + rows
@@ -68,12 +69,12 @@ def _fetch_bars(api, code: str, total: int = 8000):
     return rows
 
 
-def fetch_etf_hq(code: str, total: int = 8000) -> pd.DataFrame:
-    """标准行情协议拉取 ETF 日线（market=1 上海，不复权）"""
+def fetch_etf_hq(code: str, total: int = 8000, market: int = 1) -> pd.DataFrame:
+    """标准行情协议拉取 ETF 日线（market=1 上海 / 0 深圳，不复权）"""
     from pytdx.hq import TdxHq_API
     api = TdxHq_API()
     _connect_hq(api)
-    rows = _fetch_bars(api, code, total)
+    rows = _fetch_bars(api, code, total, market=market)
     api.disconnect()
 
     df = pd.DataFrame(rows)
@@ -83,18 +84,19 @@ def fetch_etf_hq(code: str, total: int = 8000) -> pd.DataFrame:
     return df
 
 
-def fetch_etf_hfq_tdx(code: str) -> pd.DataFrame:
+def fetch_etf_hfq_tdx(code: str, market: int = 1) -> pd.DataFrame:
     """纯通达信通道计算后复权日线：
     原始K线 + get_xdxr_info 除权除息记录（fenhong 单位为"每10份"，suogu 为缩股比例），
     在除权日修正当日收益（分红按现金再投资、缩股按份额折算），
     复权因子 = 复权收盘/原始收盘，套用到 OHLC。
+    market: 1=上海，0=深圳（如 159552 中证2000增强ETF 走深圳）。
     """
     from pytdx.hq import TdxHq_API
     api = TdxHq_API()
     _connect_hq(api)
-    rows = _fetch_bars(api, code)
+    rows = _fetch_bars(api, code, market=market)
     try:
-        xdxr = api.get_xdxr_info(1, code) or []
+        xdxr = api.get_xdxr_info(market, code) or []
     except Exception:
         xdxr = []
     api.disconnect()
@@ -169,13 +171,13 @@ def fetch_avg_price_hq(total: int = 8000) -> pd.DataFrame:
     return df
 
 
-def fetch_etf_hfq_tx(code: str) -> pd.DataFrame:
+def fetch_etf_hfq_tx(code: str, market: int = 1) -> pd.DataFrame:
     """腾讯后复权日线（后备通道），按年分页"""
     import requests
     sess = requests.Session()
     sess.trust_env = False
     url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get'
-    symbol = 'sh%s' % code
+    symbol = ('sh' if market == 1 else 'sz') + code
     rows = []
     this_year = pd.Timestamp.now().year
     for year in range(2016, this_year + 1):
@@ -193,8 +195,8 @@ def fetch_etf_hfq_tx(code: str) -> pd.DataFrame:
     return df[~df.index.duplicated(keep='last')].sort_index()
 
 
-def fetch_etf_hfq_em(code: str) -> pd.DataFrame:
-    """后复权日线：东财主通道，失败自动切腾讯后备"""
+def fetch_etf_hfq_em(code: str, market: int = 1) -> pd.DataFrame:
+    """后复权日线：东财主通道，失败自动切腾讯后备（market: 1=上海, 0=深圳）"""
     import requests
     url = 'https://push2his.eastmoney.com/api/qt/stock/kline/get'
     params = {
@@ -203,7 +205,7 @@ def fetch_etf_hfq_em(code: str) -> pd.DataFrame:
         'ut': '7eea3edcaed734bea9cbfc24409ed989',
         'klt': '101', 'fqt': '2',   # fqt=2 后复权
         'beg': '20160101', 'end': '20991231',
-        'secid': '1.%s' % code,
+        'secid': '%d.%s' % (market, code),
     }
     ua = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     sess = requests.Session()
@@ -223,16 +225,17 @@ def fetch_etf_hfq_em(code: str) -> pd.DataFrame:
             last_err = e
             time.sleep(2)
     print('  东财通道失败(%s)，切换腾讯后备通道...' % repr(last_err)[:60])
-    return fetch_etf_hfq_tx(code)
+    return fetch_etf_hfq_tx(code, market=market)
 
 
-def fetch_etf_hfq(code: str) -> pd.DataFrame:
-    """后复权日线：通达信自算（主，经除权缺口验证最准）→ 东财 → 腾讯"""
+def fetch_etf_hfq(code: str, market: int = 1) -> pd.DataFrame:
+    """后复权日线：通达信自算（主，经除权缺口验证最准）→ 东财 → 腾讯
+    market: 1=上海（默认，已有标的），0=深圳（159 开头 ETF）"""
     try:
-        return fetch_etf_hfq_tdx(code)
+        return fetch_etf_hfq_tdx(code, market=market)
     except Exception as e:
         print('  TDX复权通道失败(%s)，切东财/腾讯...' % repr(e)[:60])
-        return fetch_etf_hfq_em(code)
+        return fetch_etf_hfq_em(code, market=market)
 
 
 def main():
@@ -255,6 +258,17 @@ def main():
     dfdiv_raw = fetch_etf_hq('512890')
     dfdiv_raw.to_csv(os.path.join(DATA_DIR, 'etf_512890.csv'))
     print('  %d 行  %s ~ %s' % (len(dfdiv_raw), dfdiv_raw.index[0].date(), dfdiv_raw.index[-1].date()))
+
+    # 进攻仓新标的：中证2000增强ETF 159552（深圳 market=0，2024-06-28 上市）
+    print('--- 拉取 159552.SZ 中证2000增强ETF(后复权) ---')
+    df2000e = fetch_etf_hfq('159552', market=0)
+    df2000e.to_csv(os.path.join(DATA_DIR, 'etf_159552_hfq.csv'))
+    print('  %d 行  %s ~ %s' % (len(df2000e), df2000e.index[0].date(), df2000e.index[-1].date()))
+
+    print('--- 拉取 159552.SZ 中证2000增强ETF(不复权) ---')
+    df2000e_raw = fetch_etf_hq('159552', market=0)
+    df2000e_raw.to_csv(os.path.join(DATA_DIR, 'etf_159552.csv'))
+    print('  %d 行  %s ~ %s' % (len(df2000e_raw), df2000e_raw.index[0].date(), df2000e_raw.index[-1].date()))
 
     print('--- 拉取 880003 平均股价 ---')
     dfavg = fetch_avg_price_hq()
