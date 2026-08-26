@@ -166,6 +166,15 @@
   .card-head .hint { font-size: 11px; color: var(--faint); }
   #chart { width: 100%; height: 62vh; min-height: 440px; padding: 0 6px; }
   #dailyChart { width: 100%; height: 240px; padding: 0 6px; }
+  #ddChart { width: 100%; height: 260px; padding: 0 6px; }
+  #rollChart { width: 100%; height: 260px; padding: 0 6px; }
+  #sigBanner {
+    display: none; margin: 16px 20px 0; padding: 13px 18px; border-radius: 14px;
+    font-size: 14px; font-weight: 600; border: 1px solid;
+    animation: fadeUp 0.4s ease both;
+  }
+  #sigBanner.buy { display: block; background: color-mix(in srgb, var(--up) 12%, var(--card)); border-color: var(--up); color: var(--up); }
+  #sigBanner.sell { display: block; background: color-mix(in srgb, var(--down) 12%, var(--card)); border-color: var(--down); color: var(--down); }
 
   /* ---------- KPI 卡片 ---------- */
   .kpi-row { display: flex; gap: 14px; margin: 16px 20px; flex-wrap: wrap; }
@@ -293,6 +302,19 @@
   .table-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 5px; }
   .table-scroll::-webkit-scrollbar-track { background: transparent; }
 
+  /* ---------- 持仓段统计 ---------- */
+  .stat-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 4px 18px 18px; }
+  .stat-item {
+    flex: 1 1 150px; min-width: 140px;
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px;
+  }
+  .stat-item .k { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .stat-item .v { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-item .v.pos { color: var(--up); }
+  .stat-item .v.neg { color: var(--down); }
+  .stat-item .s { font-size: 10px; color: var(--faint); margin-top: 3px; }
+
   @media (max-width: 720px) {
     .topbar { padding: 10px 14px; }
     .card { margin: 12px; }
@@ -331,6 +353,8 @@
 
 <div id="err">数据加载失败：请先运行 export_json.py 生成 site/data.json，并通过 启动.bat 访问（勿直接双击 html）。</div>
 
+<div id="sigBanner"></div>
+
 <div class="kpi-row" id="kpiRow">
   <div class="kpi-card featured"><span class="icon">💰</span><div class="label">累计收益</div><div class="value pos" id="kpiCum">-</div><div class="sub" id="kpiCumSub"></div></div>
   <div class="kpi-card"><span class="icon">📈</span><div class="label">年化收益</div><div class="value pos" id="kpiAnn">-</div><div class="sub" id="kpiAnnSub"></div></div>
@@ -353,6 +377,14 @@
 
 <div class="card">
   <div class="card-head">
+    <h2>持仓段统计</h2>
+    <span class="hint">按"笔"统计（一次完整买入→卖出为一段）· 已含双边费用 · 决策的单位是笔不是天，看这张卡</span>
+  </div>
+  <div class="stat-grid" id="legStats"></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
     <h2>月度 / 年度收益</h2>
     <span class="hint">策略净值，含费用 · 小字=该期 进攻仓 / 红利低波 贡献（乘积口径：期收益 = (1+进攻贡献)×(1+红利贡献) − 1，切换日归入新仓位）</span>
   </div>
@@ -367,6 +399,22 @@
     <span class="hint" id="dailyStats"></span>
   </div>
   <div id="dailyChart"></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>回撤</h2>
+    <span class="hint" id="ddStats"></span>
+  </div>
+  <div id="ddChart"></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>滚动指标</h2>
+    <span class="hint">滚动 250 日（约一年）超额收益：策略 − 进攻仓持有 / − 50/50 静态组合 · 持续在零轴上方 = 择时仍有效；长期贴零或转负才是钝化警报</span>
+  </div>
+  <div id="rollChart"></div>
 </div>
 
 <div class="card">
@@ -389,6 +437,8 @@
 // ===== 主题 =====
 let chart = null;
 let dailyChart = null;
+let ddChart = null;
+let rollChart = null;
 let lastData = null;
 
 function getTheme() {
@@ -418,7 +468,7 @@ function getTheme() {
 document.getElementById('themeBtn').addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
-  if (lastData) { render(lastData); renderDaily(lastData); }
+  if (lastData) { render(lastData); renderDaily(lastData); renderRisk(lastData); renderRolling(lastData); }
 });
 document.getElementById('refreshBtn').addEventListener('click', () => {
   const btn = document.getElementById('refreshBtn');
@@ -443,6 +493,10 @@ function loadData() {
     render(data);
     renderReturns(data);
     renderDaily(data);
+    renderSignalAlert(data);
+    renderRisk(data);
+    renderRolling(data);
+    renderLegStats(data);
     renderTable(data);
   }).catch(e => {
     document.getElementById('err').style.display = 'block';
@@ -506,20 +560,21 @@ function renderKPIs(data) {
   setKPI('kpiCum', (cumRet * 100).toFixed(2) + '%', cumRet > 0 ? 'pos' : 'down',
     'kpiCumSub', `起止 ${data.dates[0]} → ${data.dates[N]}`);
 
-  // 年化
-  const annRet = Math.pow(finalNAV, 1 / years) - 1;
-  setKPI('kpiAnn', (annRet * 100).toFixed(2) + '%', annRet > 0 ? 'pos' : 'down',
-    'kpiAnnSub', `${data.dates.length} 个交易日`);
-
-  // 最大回撤
-  let p = nav[0], m = 0, pDate = 0;
+  // 最大回撤 + 最长水下时间（连续低于前高的交易日数）
+  let p = nav[0], m = 0, pDate = 0, uw = 0, uwMax = 0;
   for (let i = 1; i <= N; i++) {
-    if (nav[i] > p) { p = nav[i]; pDate = i; }
+    if (nav[i] > p) { p = nav[i]; pDate = i; uw = 0; }
+    else { uw++; if (uw > uwMax) uwMax = uw; }
     const d = (nav[i] / p) - 1;
     if (d < m) m = d;
   }
   setKPI('kpiMDD', (m * 100).toFixed(2) + '%', 'down',
-    'kpiMDDSub', `峰 ${data.dates[pDate]}`);
+    'kpiMDDSub', `峰 ${data.dates[pDate]} · 最长水下 ${uwMax} 个交易日`);
+
+  // 年化（小字附 Calmar = 年化 / |最大回撤|）
+  const annRet = Math.pow(finalNAV, 1 / years) - 1;
+  setKPI('kpiAnn', (annRet * 100).toFixed(2) + '%', annRet > 0 ? 'pos' : 'down',
+    'kpiAnnSub', `${data.dates.length} 个交易日 · Calmar ${(annRet / Math.abs(m)).toFixed(2)}`);
 
   // 当前回撤
   let curPeak = nav[0], curIdx = 0;
@@ -770,7 +825,196 @@ function renderDaily(data) {
   }, true);
   dailyChart.resize();
 }
-window.addEventListener('resize', () => { if (dailyChart) dailyChart.resize(); });
+window.addEventListener('resize', () => {
+  [dailyChart, ddChart, rollChart].forEach(c => { if (c) c.resize(); });
+});
+
+// ===== 信号预警：最新收盘若触发换仓信号且与当前持仓不一致，顶部横幅提示次日操作 =====
+function renderSignalAlert(data) {
+  const el = document.getElementById('sigBanner');
+  el.className = '';
+  el.textContent = '';
+  const D = data.dates, N = D.length - 1, dif = data.dif;
+  if (N < 2) return;
+  const d2 = dif[N - 2], d1 = dif[N - 1], d0 = dif[N];
+  if (d2 == null || d1 == null || d0 == null) return;
+  const last = data.legs[data.legs.length - 1];
+  const holding = last && last.asset === '1000' ? 'atk' : 'div';
+  // 方案C：买入 = DIF 零下拐头向上；卖出 = DIF 拐头向下（任意位置）
+  const buySig = d1 < d2 && d0 > d1 && d0 < 0;
+  const sellSig = d1 > d2 && d0 < d1;
+  if (buySig && holding === 'div') {
+    el.className = 'buy';
+    el.textContent = `⚠️ ${D[N]} 收盘触发买入信号（DIF 零下拐头向上）→ 下个交易日开盘：卖出红利低波ETF，买入进攻仓`;
+  } else if (sellSig && holding === 'atk') {
+    el.className = 'sell';
+    el.textContent = `⚠️ ${D[N]} 收盘触发卖出信号（DIF 拐头向下）→ 下个交易日开盘：卖出进攻仓，买入红利低波ETF`;
+  }
+}
+
+// ===== 回撤曲线（水下） =====
+function renderRisk(data) {
+  const T = getTheme();
+  if (!ddChart) ddChart = echarts.init(document.getElementById('ddChart'));
+  const D = data.dates, nav = data.nav_strat;
+
+  // 回撤序列与最大回撤区间
+  const dd = [];
+  let peak = -Infinity, curPeakDate = D[0], mdd = 0, mddDate = D[0], mddPeakDate = D[0];
+  for (let i = 0; i < D.length; i++) {
+    if (nav[i] > peak) { peak = nav[i]; curPeakDate = D[i]; }
+    const v = +((nav[i] / peak - 1) * 100).toFixed(2);
+    dd.push(v);
+    if (v < mdd) { mdd = v; mddDate = D[i]; mddPeakDate = curPeakDate; }
+  }
+  document.getElementById('ddStats').textContent =
+    `净值回撤曲线 · 最大回撤 ${mdd.toFixed(2)}%（${mddPeakDate} 见顶 → ${mddDate} 见底）`;
+
+  ddChart.setOption({
+    animation: false,
+    textStyle: { color: T.text },
+    tooltip: { trigger: 'axis',
+      backgroundColor: T.tooltipBg, borderColor: T.tooltipBorder, borderWidth: 1,
+      axisPointer: { type: 'line', lineStyle: { color: T.cross } },
+      formatter: ps => {
+        const p = ps && ps[0];
+        return p ? `${p.axisValue}<br>回撤: <b style="color:${T.sell}">${p.value.toFixed(2)}%</b>` : '';
+      } },
+    grid: { left: 52, right: 20, top: 26, bottom: 26 },
+    xAxis: { type: 'category', data: D, boundaryGap: false,
+      axisLine: { lineStyle: { color: T.axisLine } },
+      axisLabel: { color: T.axisText } },
+    yAxis: { type: 'value', max: 0,
+      axisLabel: { color: T.axisText, formatter: '{value}%' },
+      splitLine: { lineStyle: { color: T.splitLine } } },
+    dataZoom: [{ type: 'inside' }],
+    series: [{
+      name: '回撤', type: 'line', data: dd, symbol: 'none',
+      lineStyle: { width: 1, color: T.sell },
+      itemStyle: { color: T.sell },
+      areaStyle: { color: T.areaDiv, opacity: 0.9 },
+      sampling: 'lttb', large: true, largeThreshold: 400,
+      markLine: { silent: true, symbol: 'none',
+        data: [{ yAxis: mdd }],
+        lineStyle: { color: T.sell, type: 'dashed', width: 0.8 },
+        label: { color: T.sell, fontSize: 10, formatter: mdd.toFixed(1) + '%' } }
+    }]
+  }, true);
+}
+
+// ===== 滚动指标：250 日滚动超额收益（策略 − 进攻仓持有 / − 50/50 静态组合） =====
+// 择时策略的价值是相对的：必须跑赢"拿着不动"才有意义。
+// 超额持续在零轴上方 = 择时仍有效；长期贴零或转负（约一年以上）才是钝化警报。
+function renderRolling(data) {
+  const T = getTheme();
+  if (!rollChart) rollChart = echarts.init(document.getElementById('rollChart'));
+  const D = data.dates, nav = data.nav_strat, n = D.length;
+
+  // 进攻仓拼接净值：切换日(含)前用 512100 后复权，之后用 159552 后复权收益续接
+  // 边界日收益沿用 512100 自身涨跌幅（跨界持仓当日实际仍为旧标的）
+  const swIdx = D.indexOf(data.switch_atk);
+  const atkH = data.etf1000_hfq, e2 = data.etf2000e_hfq, divH = data.etfdiv_hfq;
+  const atkNav = [1], divNav = [1];
+  for (let i = 1; i < n; i++) {
+    let r;
+    if (swIdx < 0 || i <= swIdx || e2[i] == null || e2[i - 1] == null) {
+      r = atkH[i] / atkH[i - 1] - 1;
+    } else {
+      r = e2[i] / e2[i - 1] - 1;
+    }
+    atkNav.push(atkNav[i - 1] * (1 + r));
+    divNav.push(divNav[i - 1] * divH[i] / divH[i - 1]);
+  }
+  const halfNav = atkNav.map((v, i) => 0.5 * v + 0.5 * divNav[i]);
+
+  // 滚动 250 日超额（百分点）：窗口内策略收益 − 基准收益
+  const W = 250;
+  const excess = base => nav.map((_, i) => {
+    if (i < W || base[i - W] == null) return null;
+    const rs = nav[i] / nav[i - W] - 1, rb = base[i] / base[i - W] - 1;
+    return +((rs - rb) * 100).toFixed(1);
+  });
+  const exAtk = excess(atkNav), exHalf = excess(halfNav);
+
+  rollChart.setOption({
+    animation: false,
+    textStyle: { color: T.text },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: T.tooltipBg, borderColor: T.tooltipBorder, borderWidth: 1,
+      valueFormatter: v => (v == null ? '-' : (v > 0 ? '+' : '') + v + 'pp')
+    },
+    legend: { data: ['超额 vs 进攻仓持有', '超额 vs 50/50组合'], top: 4,
+      textStyle: { color: T.muted, fontSize: 12 }, itemWidth: 16, itemHeight: 10 },
+    grid: { left: 52, right: 30, top: 36, bottom: 46 },
+    xAxis: { type: 'category', data: D, boundaryGap: false,
+      axisLine: { lineStyle: { color: T.axisLine } },
+      axisLabel: { color: T.axisText } },
+    yAxis: { type: 'value', name: '超额(pp)', scale: true,
+      nameTextStyle: { color: T.muted },
+      axisLabel: { color: T.axisText },
+      splitLine: { lineStyle: { color: T.splitLine } } },
+    dataZoom: [
+      { type: 'inside', start: 0, end: 100 },
+      { type: 'slider', bottom: 8, height: 16, start: 0, end: 100,
+        borderColor: T.axisLine,
+        backgroundColor: 'transparent',
+        fillerColor: T.zoomFill,
+        handleStyle: { color: T.zoomHandle },
+        moveHandleStyle: { color: T.zoomHandle },
+        textStyle: { color: T.axisText },
+        dataBackground: { lineStyle: { color: T.splitLine }, areaStyle: { color: T.splitLine } } }
+    ],
+    series: [
+      { name: '超额 vs 进攻仓持有', type: 'line', data: exAtk,
+        symbol: 'none', lineStyle: { width: 1.3, color: '#4d7cfe' },
+        itemStyle: { color: '#4d7cfe' }, sampling: 'lttb',
+        markLine: { silent: true, symbol: 'none', data: [{ yAxis: 0 }],
+          lineStyle: { color: T.axisText, type: 'dashed', width: 0.8 },
+          label: { show: false } } },
+      { name: '超额 vs 50/50组合', type: 'line', data: exHalf,
+        symbol: 'none', lineStyle: { width: 1.3, color: '#7a5cff' },
+        itemStyle: { color: '#7a5cff' }, sampling: 'lttb' }
+    ]
+  }, true);
+}
+
+// ===== 持仓段统计：按"笔"（一次完整买入→卖出）统计盈亏结构 =====
+// 换仓决策的单位是"笔"而不是"天"——段胜率/盈亏比直接回答"这次换仓最坏会怎样"
+function renderLegStats(data) {
+  const legs = data.legs || [];
+  const closed = legs.filter(l => !l.open);
+  const openLegs = legs.filter(l => l.open);
+  const fmtPct = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%';
+
+  const wins = closed.filter(l => l.ret > 0);
+  const losses = closed.filter(l => l.ret <= 0);
+  const sumW = wins.reduce((a, l) => a + l.ret, 0);
+  const sumL = losses.reduce((a, l) => a + l.ret, 0);
+  const avgW = wins.length ? sumW / wins.length : 0;
+  const avgL = losses.length ? sumL / losses.length : 0;
+  const best = closed.reduce((a, l) => (l.ret > a.ret ? l : a), closed[0]);
+  const worst = closed.reduce((a, l) => (l.ret < a.ret ? l : a), closed[0]);
+  const avgDays = closed.length
+    ? closed.reduce((a, l) => a + l.days, 0) / closed.length : 0;
+
+  const item = (k, v, cls, s) =>
+    `<div class="stat-item"><div class="k">${k}</div>` +
+    `<div class="v ${cls || ''}">${v}</div><div class="s">${s || ''}</div></div>`;
+
+  document.getElementById('legStats').innerHTML = [
+    item('已了结段数', closed.length, '', openLegs.length ? `另有 ${openLegs.length} 段持有中` : ''),
+    item('段胜率', (wins.length / closed.length * 100).toFixed(1) + '%', '',
+      `盈利 ${wins.length} 段 / 亏损 ${losses.length} 段`),
+    item('平均盈利段', fmtPct(avgW), 'pos', ''),
+    item('平均亏损段', fmtPct(avgL), 'neg', '单次换错的历史平均代价'),
+    item('盈亏比', (avgW / Math.abs(avgL)).toFixed(2), '', '平均盈利 ÷ 平均亏损'),
+    item('利润因子', (sumW / Math.abs(sumL)).toFixed(2), '', '总盈利 ÷ 总亏损'),
+    item('最差一段', fmtPct(worst.ret), 'neg', `${worst.buy_date} → ${worst.sell_date}`),
+    item('最好一段', fmtPct(best.ret), 'pos', `${best.buy_date} → ${best.sell_date}`),
+    item('平均持有', avgDays.toFixed(0) + ' 个交易日', '', '每段买入→卖出'),
+  ].join('');
+}
 
 // ===== 持仓明细 =====
 function renderTable(data) {
