@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 数据获取：
-- 平均股价 880003：通达信扩展行情（exhq），自动探测板块指数市场代码
-- ETF 512100.SH / 512890.SH：通达信标准行情（hq），上海市场 market=1
+- 平均股价 880003 / 上证指数 000001.SH / 创业板指 399006.SZ：通达信标准行情指数日线
+- ETF 512100.SH / 512890.SH / 510300.SH：通达信标准行情（hq），上海市场 market=1
 - ETF 159552.SZ 中证2000增强（进攻仓新标的，2024-06-28 上市）：深圳市场 market=0
 输出 CSV 到 data/ 目录
 """
@@ -14,7 +14,8 @@ import time
 
 import pandas as pd
 
-if sys.platform == 'win32' and not getattr(sys.stdout, '_utf8_wrapped', False):
+# pythonw（无窗口计划任务）下 sys.stdout 为 None，不能 reconfigure
+if sys.platform == 'win32' and sys.stdout is not None and not getattr(sys.stdout, '_utf8_wrapped', False):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
     except Exception:
@@ -134,14 +135,14 @@ def fetch_etf_hfq_tdx(code: str, market: int = 1) -> pd.DataFrame:
     return out
 
 
-def fetch_avg_price_hq(total: int = 8000) -> pd.DataFrame:
-    """标准行情 get_index_bars 拉取通达信板块指数 880003 平均股价 日线"""
+def fetch_index_hq(code: str, market: int = 1, total: int = 8000) -> pd.DataFrame:
+    """标准行情 get_index_bars 拉取指数日线（market=1 上海 / 0 深圳）"""
     from pytdx.hq import TdxHq_API
     api = TdxHq_API()
     for ip, port in HQ_SERVERS:
         try:
             if api.connect(ip, port, time_out=5):
-                probe = api.get_index_bars(9, 1, '880003', 0, 1)
+                probe = api.get_index_bars(9, market, code, 0, 1)
                 if probe:
                     print('hq 已连接 %s:%d' % (ip, port))
                     break
@@ -154,7 +155,7 @@ def fetch_avg_price_hq(total: int = 8000) -> pd.DataFrame:
     rows = []
     start = 0
     while len(rows) < total:
-        batch = api.get_index_bars(9, 1, '880003', start, 800)
+        batch = api.get_index_bars(9, market, code, start, 800)
         if not batch:
             break
         rows = batch + rows
@@ -163,12 +164,19 @@ def fetch_avg_price_hq(total: int = 8000) -> pd.DataFrame:
         start += len(batch)
         time.sleep(0.3)
     api.disconnect()
+    if not rows:
+        raise RuntimeError('指数 %s 无数据' % code)
 
     df = pd.DataFrame(rows)
     df['date'] = pd.to_datetime(df['datetime'])
     df = df.set_index('date')[['open', 'high', 'low', 'close']]
     df = df[~df.index.duplicated(keep='last')].sort_index()
     return df
+
+
+def fetch_avg_price_hq(total: int = 8000) -> pd.DataFrame:
+    """拉取通达信板块指数 880003 平均股价 日线"""
+    return fetch_index_hq('880003', market=1, total=total)
 
 
 def fetch_etf_hfq_tx(code: str, market: int = 1) -> pd.DataFrame:
@@ -238,43 +246,71 @@ def fetch_etf_hfq(code: str, market: int = 1) -> pd.DataFrame:
         return fetch_etf_hfq_em(code, market=market)
 
 
+def _retry(fn, tries=3, delay=3):
+    """拉取失败自动重试（hq 服务器偶发断连）"""
+    last = None
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            print('  第%d次失败(%s)，%ds后重试...' % (i + 1, repr(e)[:60], delay))
+            time.sleep(delay)
+    raise last
+
+
 def main():
     print('--- 拉取 512100.SH 中证1000ETF(后复权) ---')
-    df1000 = fetch_etf_hfq('512100')
+    df1000 = _retry(lambda: fetch_etf_hfq('512100'))
     df1000.to_csv(os.path.join(DATA_DIR, 'etf_512100_hfq.csv'))
     print('  %d 行  %s ~ %s' % (len(df1000), df1000.index[0].date(), df1000.index[-1].date()))
 
     print('--- 拉取 512100.SH 中证1000ETF(不复权) ---')
-    df1000_raw = fetch_etf_hq('512100')
+    df1000_raw = _retry(lambda: fetch_etf_hq('512100'))
     df1000_raw.to_csv(os.path.join(DATA_DIR, 'etf_512100.csv'))
     print('  %d 行  %s ~ %s' % (len(df1000_raw), df1000_raw.index[0].date(), df1000_raw.index[-1].date()))
 
     print('--- 拉取 512890.SH 红利低波ETF(后复权) ---')
-    dfdiv = fetch_etf_hfq('512890')
+    dfdiv = _retry(lambda: fetch_etf_hfq('512890'))
     dfdiv.to_csv(os.path.join(DATA_DIR, 'etf_512890_hfq.csv'))
     print('  %d 行  %s ~ %s' % (len(dfdiv), dfdiv.index[0].date(), dfdiv.index[-1].date()))
 
     print('--- 拉取 512890.SH 红利低波ETF(不复权) ---')
-    dfdiv_raw = fetch_etf_hq('512890')
+    dfdiv_raw = _retry(lambda: fetch_etf_hq('512890'))
     dfdiv_raw.to_csv(os.path.join(DATA_DIR, 'etf_512890.csv'))
     print('  %d 行  %s ~ %s' % (len(dfdiv_raw), dfdiv_raw.index[0].date(), dfdiv_raw.index[-1].date()))
 
     # 进攻仓新标的：中证2000增强ETF 159552（深圳 market=0，2024-06-28 上市）
     print('--- 拉取 159552.SZ 中证2000增强ETF(后复权) ---')
-    df2000e = fetch_etf_hfq('159552', market=0)
+    df2000e = _retry(lambda: fetch_etf_hfq('159552', market=0))
     df2000e.to_csv(os.path.join(DATA_DIR, 'etf_159552_hfq.csv'))
     print('  %d 行  %s ~ %s' % (len(df2000e), df2000e.index[0].date(), df2000e.index[-1].date()))
 
     print('--- 拉取 159552.SZ 中证2000增强ETF(不复权) ---')
-    df2000e_raw = fetch_etf_hq('159552', market=0)
+    df2000e_raw = _retry(lambda: fetch_etf_hq('159552', market=0))
     df2000e_raw.to_csv(os.path.join(DATA_DIR, 'etf_159552.csv'))
     print('  %d 行  %s ~ %s' % (len(df2000e_raw), df2000e_raw.index[0].date(), df2000e_raw.index[-1].date()))
 
     print('--- 拉取 880003 平均股价 ---')
-    dfavg = fetch_avg_price_hq()
+    dfavg = _retry(fetch_avg_price_hq)
     dfavg.to_csv(os.path.join(DATA_DIR, 'avg_880003.csv'))
     print('  %d 行  %s ~ %s' % (len(dfavg), dfavg.index[0].date(), dfavg.index[-1].date()))
     print(dfavg.tail(3).to_string())
+
+    print('--- 拉取 510300.SH 沪深300ETF(后复权) ---')
+    df300 = _retry(lambda: fetch_etf_hfq('510300'))
+    df300.to_csv(os.path.join(DATA_DIR, 'etf_510300_hfq.csv'))
+    print('  %d 行  %s ~ %s' % (len(df300), df300.index[0].date(), df300.index[-1].date()))
+
+    print('--- 拉取 000001.SH 上证指数 ---')
+    dfsh = _retry(lambda: fetch_index_hq('000001', market=1))
+    dfsh.to_csv(os.path.join(DATA_DIR, 'index_000001.csv'))
+    print('  %d 行  %s ~ %s' % (len(dfsh), dfsh.index[0].date(), dfsh.index[-1].date()))
+
+    print('--- 拉取 399006.SZ 创业板指 ---')
+    dfcyb = _retry(lambda: fetch_index_hq('399006', market=0))
+    dfcyb.to_csv(os.path.join(DATA_DIR, 'index_399006.csv'))
+    print('  %d 行  %s ~ %s' % (len(dfcyb), dfcyb.index[0].date(), dfcyb.index[-1].date()))
 
 
 if __name__ == '__main__':

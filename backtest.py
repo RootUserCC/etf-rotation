@@ -11,7 +11,8 @@ import io
 import pandas as pd
 import numpy as np
 
-if sys.platform == 'win32' and not getattr(sys.stdout, '_utf8_wrapped', False):
+# pythonw（无窗口计划任务）下 sys.stdout 为 None，不能 reconfigure
+if sys.platform == 'win32' and sys.stdout is not None and not getattr(sys.stdout, '_utf8_wrapped', False):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
     except Exception:
@@ -26,7 +27,7 @@ def ema(s: pd.Series, n: int) -> pd.Series:
 
 def calc_signals(close: pd.Series, sell_anywhere: bool = False,
                  fast: int = 12, slow: int = 26, sig_n: int = 9,
-                 bar_mode: bool = False) -> pd.DataFrame:
+                 bar_mode: bool = False, buy_anywhere: bool = False) -> pd.DataFrame:
     """按通达信 MACD 公式计算 DIF/DEA/MACDVAL 与拐点信号
     sell_anywhere=False: 原版，卖出要求 DIF>0
     sell_anywhere=True : 对称版，DIF 转降即切红利（零下也卖）
@@ -49,7 +50,10 @@ def calc_signals(close: pd.Series, sell_anywhere: bool = False,
         # 四色柱（通达信口径）：蓝=零上红柱缩头（m>=0 且 前柱>0 且 m<前柱），其余零上为红
         blue = (m >= 0) & (m_prev > 0) & (m < m_prev)
         red = (m >= 0) & ~blue
-        df['buy_sig'] = (dif_up & (dif < 0)) | (red & blue.shift(1).fillna(False))
+        if buy_anywhere:
+            df['buy_sig'] = dif_up                            # 方案E：DIF 拐头即买
+        else:
+            df['buy_sig'] = (dif_up & (dif < 0)) | (red & blue.shift(1).fillna(False))
         df['sell_sig'] = blue & red.shift(1).fillna(False)
     else:
         df['buy_sig'] = dif_up & (dif < 0)                       # 低位买入
@@ -73,18 +77,26 @@ def run_backtest(avg: pd.DataFrame, etf1000: pd.DataFrame, etfdiv: pd.DataFrame,
                  fee: float = 0.0001, sell_anywhere: bool = False,
                  label: str = '轮动策略', start_date=None,
                  fast: int = 12, slow: int = 26, sig_n: int = 9,
-                 bar_mode: bool = False,
+                 bar_mode: bool = False, buy_anywhere: bool = False,
+                 signals: pd.DataFrame = None,
                  verbose: bool = True) -> dict:
     """
     avg/etf1000/etfdiv: index=日期, 列至少含 open/close
     信号基于 avg 的 close 在 T 日收盘产生，T+1 日以被切换 ETF 的 open 成交
     start_date: 仅统计该日期之后的区间（信号用全部历史计算，保证 DIF 预热）
     fast/slow/sig_n: MACD 参数，默认 12/26/9（方案B），方案C 用 17/34/9
-    bar_mode: True 时改用四色柱信号（方案D，见 calc_signals）
+    bar_mode: True 时改用四色柱信号（方案D，见 calc_signals）；
+              配合 buy_anywhere=True 即方案E（DIF拐头即买、MACD变蓝即卖）
+    signals: 外部信号 DataFrame（index=日期, 含 buy_sig/sell_sig 列），
+             传入后忽略 fast/slow/sig_n/bar_mode，用于 KDJ 等自定义信号对比
     返回结果字典：nav/trades/sig/hold1000/idx
     """
-    sig = calc_signals(avg['close'], sell_anywhere=sell_anywhere,
-                       fast=fast, slow=slow, sig_n=sig_n, bar_mode=bar_mode)
+    if signals is not None:
+        sig = signals
+    else:
+        sig = calc_signals(avg['close'], sell_anywhere=sell_anywhere,
+                           fast=fast, slow=slow, sig_n=sig_n, bar_mode=bar_mode,
+                           buy_anywhere=buy_anywhere)
 
     # 对齐三只标的的交易日
     idx = etf1000.index.intersection(etfdiv.index).intersection(sig.index)

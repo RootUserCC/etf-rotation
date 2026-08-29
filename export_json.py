@@ -53,6 +53,9 @@ def main():
     etfdiv_raw = load('etf_512890.csv')
     etf2000e = load('etf_159552_hfq.csv')      # 后复权：拼接后进攻仓（2024-06-28 起）
     etf2000e_raw = load('etf_159552.csv')      # 不复权：价格显示
+    etf300 = load('etf_510300_hfq.csv')        # 后复权：沪深300ETF 超额基准
+    index_sh = load('index_000001.csv')        # 价格指数：上证指数超额基准
+    index_cyb = load('index_399006.csv')       # 价格指数：创业板指超额基准
 
     # 进攻腿拼接：切换日前整段用 512100，切换日起整段用 159552（信号不变，仍由 880003 决定）
     etf_atk = pd.concat([etf1000[etf1000.index < SWITCH_ATK],
@@ -217,6 +220,9 @@ def main():
         'etfdiv_hfq': series(etfdiv),
         'etf2000e': series_sparse(etf2000e_raw),  # 159552 不复权（2024-06-28 前为 null）
         'etf2000e_hfq': series_sparse(etf2000e),  # 159552 后复权（同上）
+        'etf300_hfq': series(etf300),             # 沪深300ETF 后复权：超额基准
+        'index_sh': series(index_sh),             # 上证指数（价格指数）：超额基准
+        'index_cyb': series(index_cyb),           # 创业板指（价格指数）：超额基准
         'switch_atk': SWITCH_ATK.strftime('%Y-%m-%d'),   # 进攻仓切换日（512100→159552）
         'dif': [round(float(v), 4) for v in sig['dif'].values],
         'dea': [round(float(v), 4) for v in sig['dea'].values],

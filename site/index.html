@@ -165,6 +165,9 @@
   }
   .card-head .hint { font-size: 11px; color: var(--faint); }
   #chart { width: 100%; height: 62vh; min-height: 440px; padding: 0 6px; }
+  .bench-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bench-grid .card { min-width: 0; }
+  #bench300Chart, #benchCybChart, #benchShChart { width: 100%; height: 230px; padding: 0 6px; }
   #dailyChart { width: 100%; height: 240px; padding: 0 6px; }
   #ddChart { width: 100%; height: 260px; padding: 0 6px; }
   #rollChart { width: 100%; height: 260px; padding: 0 6px; }
@@ -297,6 +300,16 @@
     border-top: 2px solid var(--border2);
     background: var(--card2); font-weight: 700;
   }
+  .ret-table td.pair {
+    white-space: nowrap;
+    background: linear-gradient(90deg, var(--atk-bg) 0 50%, var(--div-bg) 50% 100%);
+  }
+  .ret-table tr.sum-row td.pair {
+    background: linear-gradient(90deg, var(--atk-bg) 0 50%, var(--div-bg) 50% 100%);
+  }
+  .ret-table td.pair .atk, .hint .atk { color: var(--amber); font-weight: 600; }
+  .ret-table td.pair .div, .hint .div { color: var(--accent); font-weight: 600; }
+  .ret-table td.pair .sep { color: var(--faint); padding: 0 3px; font-weight: 400; }
 
   .table-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
   .table-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 5px; }
@@ -319,6 +332,7 @@
     .topbar { padding: 10px 14px; }
     .card { margin: 12px; }
     .brand .sub { display: none; }
+    .bench-grid { grid-template-columns: 1fr; }
     #chart { height: 52vh; }
   }
 </style>
@@ -375,6 +389,30 @@
   <div id="chart"></div>
 </div>
 
+<div class="bench-grid">
+  <div class="card">
+    <div class="card-head">
+      <h2>策略 vs 沪深300ETF</h2>
+      <span class="hint" id="bench300Stats"></span>
+    </div>
+    <div id="bench300Chart"></div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <h2>策略 vs 创业板指</h2>
+      <span class="hint" id="benchCybStats"></span>
+    </div>
+    <div id="benchCybChart"></div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <h2>策略 vs 上证指数</h2>
+      <span class="hint" id="benchShStats"></span>
+    </div>
+    <div id="benchShChart"></div>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-head">
     <h2>持仓段统计</h2>
@@ -390,6 +428,16 @@
   </div>
   <div class="table-scroll">
     <table class="ret-table" id="retTable"></table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>进攻 / 防守收益</h2>
+    <span class="hint">每格 = <span class="atk">进攻</span> / <span class="div">防守</span> 买入持有收益，按月末/年末环比 · 进攻仓=512100 拼 159552，防守仓=512890 · 不含轮动信号与交易费用</span>
+  </div>
+  <div class="table-scroll">
+    <table class="ret-table" id="assetRetTable"></table>
   </div>
 </div>
 
@@ -439,6 +487,7 @@ let chart = null;
 let dailyChart = null;
 let ddChart = null;
 let rollChart = null;
+const benchCharts = {};
 let lastData = null;
 
 function getTheme() {
@@ -468,15 +517,32 @@ function getTheme() {
 document.getElementById('themeBtn').addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
-  if (lastData) { render(lastData); renderDaily(lastData); renderRisk(lastData); renderRolling(lastData); }
+  if (lastData) { render(lastData); renderBenchmarks(lastData); renderDaily(lastData); renderRisk(lastData); renderRolling(lastData); }
 });
+let refreshing = false;
 document.getElementById('refreshBtn').addEventListener('click', () => {
+  if (refreshing) return;
+  refreshing = true;
   const btn = document.getElementById('refreshBtn');
+  const updated = document.getElementById('updated');
   btn.style.transform = 'rotate(180deg)';
-  fetch('/api/update').then(r => r.json()).then(res => {
-    if (res.ok && !res.skipped) loadData();
-    setTimeout(() => btn.style.transform = '', 500);
-  }).catch(e => { console.error(e); btn.style.transform = ''; });
+  btn.style.opacity = '0.5';
+  updated.textContent = '正在更新行情…';
+  fetch('/api/update?force=1').then(r => r.json()).then(res => {
+    if (res.ok) {
+      loadData();
+    } else {
+      updated.textContent = '更新失败: ' + (res.error || '未知错误');
+      console.error('数据更新失败: ' + (res.error || '未知错误'));
+    }
+  }).catch(e => {
+    updated.textContent = '更新接口不可用';
+    console.error(e);
+  }).finally(() => {
+      refreshing = false;
+      btn.style.opacity = '';
+      setTimeout(() => btn.style.transform = '', 500);
+    });
 });
 
 // ===== 数据加载 =====
@@ -491,7 +557,9 @@ function loadData() {
     renderStatus(data);
     renderKPIs(data);
     render(data);
+    renderBenchmarks(data);
     renderReturns(data);
+    renderAssetReturns(data);
     renderDaily(data);
     renderSignalAlert(data);
     renderRisk(data);
@@ -630,6 +698,88 @@ function renderKPIs(data) {
   }
 }
 
+// ===== 基准对比：自策略回测起点归一化，直观比较各阶段走势 =====
+function renderBenchmarks(data) {
+  const T = getTheme();
+  const D = data.dates, nav = data.nav_strat, N = nav.length - 1;
+  const years = D.length / 252;
+  const stratCum = nav[N] / nav[0] - 1;
+  const stratAnn = Math.pow(nav[N] / nav[0], 1 / years) - 1;
+  const specs = [
+    { key: '300', chartId: 'bench300Chart', statsId: 'bench300Stats',
+      name: '沪深300ETF', values: data.etf300_hfq, basis: '后复权' },
+    { key: 'cyb', chartId: 'benchCybChart', statsId: 'benchCybStats',
+      name: '创业板指', values: data.index_cyb, basis: '价格指数' },
+    { key: 'sh', chartId: 'benchShChart', statsId: 'benchShStats',
+      name: '上证指数', values: data.index_sh, basis: '价格指数' },
+  ];
+
+  for (const spec of specs) {
+    const statsEl = document.getElementById(spec.statsId);
+    if (!spec.values || spec.values.length !== D.length) {
+      statsEl.textContent = '基准数据未更新';
+      continue;
+    }
+    const bench = spec.values;
+    const benchCum = bench[N] / bench[0] - 1;
+    const benchAnn = Math.pow(1 + benchCum, 1 / years) - 1;
+    const exAnn = stratAnn - benchAnn;
+    const exCum = stratCum - benchCum;
+    statsEl.textContent = `${D[0]} 起=1 · 年化超额 ${exAnn >= 0 ? '+' : ''}${(exAnn * 100).toFixed(2)}%`
+      + ` · 累计 ${exCum >= 0 ? '+' : ''}${(exCum * 100).toFixed(0)}pp · ${spec.basis}`;
+
+    if (!benchCharts[spec.key]) {
+      benchCharts[spec.key] = echarts.init(document.getElementById(spec.chartId));
+    }
+    const c = benchCharts[spec.key];
+    const norm = arr => arr.map(v => +(v / arr[0]).toFixed(4));
+    c.setOption({
+      animation: false,
+      textStyle: { color: T.text },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: T.tooltipBg,
+        borderColor: T.tooltipBorder,
+        borderWidth: 1,
+        textStyle: { color: T.text },
+        formatter: params => {
+          let html = `<div style="font-weight:600;margin-bottom:4px">${params[0].axisValue}</div>`;
+          for (const p of params) {
+            const ret = (p.value - 1) * 100;
+            html += `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;`
+                  + `background:${p.color};margin-right:5px"></span>${p.seriesName}: `
+                  + `<b>${p.value.toFixed(2)}</b>（${ret >= 0 ? '+' : ''}${ret.toFixed(1)}%）</div>`;
+          }
+          return html;
+        }
+      },
+      legend: {
+        data: ['策略', spec.name],
+        top: 4,
+        textStyle: { color: T.muted, fontSize: 11 },
+        itemWidth: 14, itemHeight: 8
+      },
+      grid: { left: 42, right: 16, top: 36, bottom: 26 },
+      xAxis: { type: 'category', data: D, boundaryGap: false,
+        axisLine: { lineStyle: { color: T.axisLine } },
+        axisLabel: { color: T.axisText } },
+      yAxis: { type: 'value', scale: true,
+        axisLabel: { color: T.axisText, formatter: v => v.toFixed(1) },
+        splitLine: { lineStyle: { color: T.splitLine } } },
+      dataZoom: [{ type: 'inside' }],
+      series: [
+        { name: '策略', type: 'line', data: norm(nav), showSymbol: false,
+          lineStyle: { color: T.buy, width: 2 }, itemStyle: { color: T.buy },
+          markLine: { silent: true, symbol: 'none', label: { show: false },
+            lineStyle: { color: T.axisLine, type: 'dashed' }, data: [{ yAxis: 1 }] } },
+        { name: spec.name, type: 'line', data: norm(bench), showSymbol: false,
+          lineStyle: { color: T.dea, width: 1.6 }, itemStyle: { color: T.dea } },
+      ]
+    }, true);
+    c.resize();
+  }
+}
+
 // ===== 自定义区间收益（近 N 个交易日，或自某日起） =====
 let customMode = 'days';          // 最后操作哪个输入框就按哪个算
 function updateCustomKPI(data) {
@@ -750,6 +900,76 @@ function renderReturns(data) {
   document.getElementById('retTable').innerHTML = html;
 }
 
+// ===== 进攻/防守买入持有收益：按月末与年末净值环比 =====
+function renderAssetReturns(data) {
+  const D = data.dates, n = D.length;
+  const swIdx = D.indexOf(data.switch_atk);
+  const atkH = data.etf1000_hfq, e2 = data.etf2000e_hfq, divH = data.etfdiv_hfq;
+
+  // 与滚动指标同口径：切换日(含)前用512100，之后接159552收益
+  const atkNav = [1], divNav = [1];
+  for (let i = 1; i < n; i++) {
+    const rAtk = (swIdx < 0 || i <= swIdx || e2[i] == null || e2[i - 1] == null)
+      ? atkH[i] / atkH[i - 1] - 1
+      : e2[i] / e2[i - 1] - 1;
+    atkNav.push(atkNav[i - 1] * (1 + rAtk));
+    divNav.push(divNav[i - 1] * divH[i] / divH[i - 1]);
+  }
+
+  const atkStats = periodStats(atkNav, D);
+  const divStats = periodStats(divNav, D);
+
+  let html = '<thead><tr><th>年份</th>';
+  for (let m = 1; m <= 12; m++) html += `<th>${m}月</th>`;
+  html += '<th>全年</th></tr></thead><tbody>';
+  for (const y of atkStats.years) {
+    html += `<tr><td class="year">${y}</td>`;
+    for (let m = 1; m <= 12; m++) {
+      const key = `${y}-${String(m).padStart(2, '0')}`;
+      html += pairCell(atkStats.mRet[key], divStats.mRet[key]);
+    }
+    html += pairCell(atkStats.yRet[y], divStats.yRet[y]) + '</tr>';
+  }
+  html += `<tr class="sum-row"><td class="year">汇总</td>${'<td></td>'.repeat(12)}${pairCell(atkStats.total, divStats.total)}</tr>`;
+  html += '</tbody>';
+  document.getElementById('assetRetTable').innerHTML = html;
+
+  function periodStats(values, dates) {
+    const monthLast = {}, yearLast = {};
+    dates.forEach((d, i) => {
+      monthLast[d.slice(0, 7)] = values[i];
+      yearLast[d.slice(0, 4)] = values[i];
+    });
+
+    const mRet = {};
+    let prev = values[0];
+    Object.keys(monthLast).sort().forEach(m => {
+      mRet[m] = monthLast[m] / prev - 1;
+      prev = monthLast[m];
+    });
+    const years = Object.keys(yearLast).sort();
+    const yRet = {};
+    prev = values[0];
+    years.forEach(y => {
+      yRet[y] = yearLast[y] / prev - 1;
+      prev = yearLast[y];
+    });
+    return { mRet, years, yRet, total: values[values.length - 1] / values[0] - 1 };
+  }
+
+  function pairCell(atk, div) {
+    if (atk == null || div == null) return '<td>-</td>';
+    const value = (v, cls) => `<span class="${cls}">${(v * 100).toFixed(2)}%</span>`;
+    const bg = v => {
+      const intensity = Math.min(0.38, Math.abs(v) * 2.2);
+      const color = v < 0 ? 'var(--down)' : 'var(--up)';
+      return `color-mix(in srgb, ${color} ${(intensity * 100).toFixed(0)}%, transparent)`;
+    };
+    return `<td class="pair" style="--atk-bg: ${bg(atk)}; --div-bg: ${bg(div)}">`
+         + `${value(atk, 'atk')}<span class="sep">/</span>${value(div, 'div')}</td>`;
+  }
+}
+
 // ===== 每日收益：由策略净值序列计算日收益，红涨绿跌柱状图 =====
 function renderDaily(data) {
   const T = getTheme();
@@ -826,7 +1046,7 @@ function renderDaily(data) {
   dailyChart.resize();
 }
 window.addEventListener('resize', () => {
-  [dailyChart, ddChart, rollChart].forEach(c => { if (c) c.resize(); });
+  [dailyChart, ddChart, rollChart, ...Object.values(benchCharts)].forEach(c => { if (c) c.resize(); });
 });
 
 // ===== 信号预警：最新收盘若触发换仓信号且与当前持仓不一致，顶部横幅提示次日操作 =====
