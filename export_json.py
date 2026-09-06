@@ -82,6 +82,21 @@ def main():
         s = df.loc[idx, 'close']
         return [round(float(v), 3) for v in s.values]
 
+    def series_k(df):
+        """K线序列：[open, close, low, high]（ECharts candlestick 数据顺序）"""
+        o = df.loc[idx, 'open']
+        c = df.loc[idx, 'close']
+        lo = df.loc[idx, 'low']
+        hi = df.loc[idx, 'high']
+        return [[round(float(a), 3), round(float(b), 3), round(float(l), 3), round(float(h), 3)]
+                for a, b, l, h in zip(o.values, c.values, lo.values, hi.values)]
+
+    def series_k_sparse(df):
+        """K线序列（稀疏版）：标的历史不足全窗口时缺失日期补 None"""
+        cols = df[['open', 'close', 'low', 'high']]
+        return [[round(float(v), 3) for v in cols.loc[d].values] if d in cols.index
+                else None for d in idx]
+
     def series_sparse(df):
         """标的历史不足全窗口时（如 159552 自 2024-06-28 起），缺失日期补 None"""
         s = df['close']
@@ -214,6 +229,9 @@ def main():
     out = {
         'dates': dates,
         'avg': series(avg),
+        'avg_k': series_k(avg),                   # 平均股价 K线（开/收/低/高）
+        'etfdiv_k': series_k(etfdiv_raw),         # 红利低波ETF K线（不复权真实价格）
+        'etf2000e_k': series_k_sparse(etf2000e_raw),  # 中证2000增强ETF K线（不复权，2024-06-28 前为 null）
         'etf1000': series(etf1000_raw),
         'etfdiv': series(etfdiv_raw),
         'etf1000_hfq': series(etf1000),           # 后复权：净值对比基准（超额收益沿用512100口径）

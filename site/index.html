@@ -164,7 +164,19 @@
     background: var(--grad); flex: none;
   }
   .card-head .hint { font-size: 11px; color: var(--faint); }
+  /* 折线/K线 切换 */
+  .seg-toggle {
+    display: inline-flex; flex: none;
+    border: 1px solid var(--border2); border-radius: 8px; overflow: hidden;
+  }
+  .seg-toggle button {
+    border: none; background: var(--card2); color: var(--muted);
+    font-size: 11px; padding: 3px 10px; cursor: pointer; font-family: inherit;
+    transition: all 0.15s;
+  }
+  .seg-toggle button.on { background: var(--grad); color: #fff; }
   #chart { width: 100%; height: 62vh; min-height: 440px; padding: 0 6px; }
+  #klineChart { width: 100%; height: 72vh; min-height: 520px; padding: 0 6px; }
   .bench-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .bench-grid .card { min-width: 0; }
   #bench300Chart, #benchCybChart, #benchShChart { width: 100%; height: 230px; padding: 0 6px; }
@@ -334,6 +346,7 @@
     .brand .sub { display: none; }
     .bench-grid { grid-template-columns: 1fr; }
     #chart { height: 52vh; }
+    #klineChart { height: 84vh; }
   }
 </style>
 </head>
@@ -384,9 +397,23 @@
 <div class="card">
   <div class="card-head">
     <h2>走势总览</h2>
+    <span class="seg-toggle" id="klineToggle">
+      <button class="on" data-mode="line">折线</button><button data-mode="k">K线</button>
+    </span>
     <span class="hint">▲买进攻（卖红利低波）　▼买红利低波（卖进攻）　底纹=持仓区间（红=进攻仓 / 绿=红利低波），区间顶部数字=该段收益 · 拖动下方滑块缩放　｜　口径：进攻仓 2024-06-28 起为中证2000增强ETF(159552)，此前为中证1000ETF(512100)</span>
   </div>
   <div id="chart"></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>K线对比</h2>
+    <span class="seg-toggle" id="klLayoutToggle">
+      <button class="on" data-mode="split">分列</button><button data-mode="overlay">叠加</button>
+    </span>
+    <span class="hint">平均股价 / 红利低波ETF / 中证2000增强ETF（不复权真实价格，2024-06-28 前无 159552 数据）· 叠加模式按各自期初=1 归一化（实心蜡烛=平均股价，描边蜡烛=ETF）· 拖动下方滑块或滚轮缩放</span>
+  </div>
+  <div id="klineChart"></div>
 </div>
 
 <div class="bench-grid">
@@ -484,11 +511,30 @@
 <script>
 // ===== 主题 =====
 let chart = null;
+let klineChart = null;
 let dailyChart = null;
 let ddChart = null;
 let rollChart = null;
 const benchCharts = {};
 let lastData = null;
+let klineMode = false;   // 走势总览：false=折线，true=K线（平均股价）
+let klineOverlay = false;  // K线对比：false=三图分列，true=归一化叠加
+
+document.getElementById('klLayoutToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  klineOverlay = btn.dataset.mode === 'overlay';
+  for (const b of btn.parentElement.children) b.classList.toggle('on', b === btn);
+  if (lastData) renderKline(lastData);
+});
+
+document.getElementById('klineToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  klineMode = btn.dataset.mode === 'k';
+  for (const b of btn.parentElement.children) b.classList.toggle('on', b === btn);
+  if (lastData) render(lastData);
+});
 
 function getTheme() {
   const light = document.documentElement.dataset.theme === 'light';
@@ -517,7 +563,7 @@ function getTheme() {
 document.getElementById('themeBtn').addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
-  if (lastData) { render(lastData); renderBenchmarks(lastData); renderDaily(lastData); renderRisk(lastData); renderRolling(lastData); }
+  if (lastData) { render(lastData); renderKline(lastData); renderBenchmarks(lastData); renderDaily(lastData); renderRisk(lastData); renderRolling(lastData); }
 });
 let refreshing = false;
 document.getElementById('refreshBtn').addEventListener('click', () => {
@@ -557,6 +603,7 @@ function loadData() {
     renderStatus(data);
     renderKPIs(data);
     render(data);
+    renderKline(data);
     renderBenchmarks(data);
     renderReturns(data);
     renderAssetReturns(data);
@@ -1046,7 +1093,7 @@ function renderDaily(data) {
   dailyChart.resize();
 }
 window.addEventListener('resize', () => {
-  [dailyChart, ddChart, rollChart, ...Object.values(benchCharts)].forEach(c => { if (c) c.resize(); });
+  [dailyChart, ddChart, rollChart, klineChart, ...Object.values(benchCharts)].forEach(c => { if (c) c.resize(); });
 });
 
 // ===== 信号预警：最新收盘若触发换仓信号且与当前持仓不一致，顶部横幅提示次日操作 =====
@@ -1374,6 +1421,12 @@ function render(data) {
           ['红利低波ETF', data.etfdiv, data.etfdiv_hfq, T.etfdiv, 3]
         ];
         let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+        // K线模式：先列出平均股价 开/高/低/收
+        if (klineMode && data.avg_k && data.avg_k[i]) {
+          const [o, c, lo, hi] = data.avg_k[i];
+          const cc = c >= o ? T.buy : T.sell;
+          html += `<div style="color:${cc}">开 ${o.toFixed(2)}　高 ${hi.toFixed(2)}　低 ${lo.toFixed(2)}　收 <b>${c.toFixed(2)}</b></div>`;
+        }
         for (const [name, arr, base, color, dp] of rows) {
           const v = arr[i];
           html += `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;`
@@ -1398,7 +1451,7 @@ function render(data) {
       { left: 62, right: 62, top: '53%', height: '45%' }
     ],
     xAxis: [
-      { type: 'category', data: D, gridIndex: 0, boundaryGap: false,
+      { type: 'category', data: D, gridIndex: 0, boundaryGap: klineMode,
         axisLine: { lineStyle: { color: T.axisLine } },
         axisLabel: { color: T.axisText } },
       { type: 'category', data: D, gridIndex: 1, boundaryGap: false, show: false }
@@ -1430,7 +1483,24 @@ function render(data) {
       }
     ],
     series: [
-      {
+      // 平均股价：折线 / K线 两种形态，共用持仓区间底纹与换仓点标注
+      ...(klineMode && data.avg_k ? [{
+        name: '平均股价(左轴)', type: 'candlestick', data: data.avg_k,
+        xAxisIndex: 0, yAxisIndex: 0,
+        itemStyle: { color: T.buy, color0: T.sell,
+          borderColor: T.buy, borderColor0: T.sell },
+        markArea: {
+          silent: true,
+          itemStyle: { color: T.area },
+          data: areas
+        },
+        markPoint: {
+          symbol: 'triangle', symbolSize: 11,
+          itemStyle: { color: T.buy },
+          label: { show: true, fontSize: 9, position: 'top' },
+          data: marks
+        }
+      }] : [{
         name: '平均股价(左轴)', type: 'line', data: data.avg,
         xAxisIndex: 0, yAxisIndex: 0,
         symbol: 'none', lineStyle: { width: 1.4, color: T.avg },
@@ -1447,7 +1517,7 @@ function render(data) {
           label: { show: true, fontSize: 9, position: 'top' },
           data: marks
         }
-      },
+      }]),
       {
         name: '中证2000增强ETF(右轴)', type: 'line', data: data.etf2000e,
         xAxisIndex: 0, yAxisIndex: 1,
@@ -1509,6 +1579,162 @@ function render(data) {
   };
   chart.setOption(option, true);
   window.addEventListener('resize', () => chart.resize());
+}
+
+// ===== K线对比：平均股价 / 红利低波ETF / 中证2000增强ETF 三个蜡烛图共用时间轴 =====
+function renderKline(data) {
+  const T = getTheme();
+  if (!data.avg_k || !data.etfdiv_k || !data.etf2000e_k) return;
+  if (!klineChart) klineChart = echarts.init(document.getElementById('klineChart'));
+  const D = data.dates;
+
+  const kItemStyle = {
+    color: T.buy, color0: T.sell,
+    borderColor: T.buy, borderColor0: T.sell
+  };
+
+  // ---- 叠加模式：三只标的各自按期初=1 归一化后画在同一坐标系 ----
+  // 平均股价用实心红绿蜡烛；两只 ETF 用描边空心蜡烛（身份色区分，避免与涨跌色混淆）
+  if (klineOverlay) {
+    const norm = arr => {
+      const first = arr.find(v => v);
+      const c0 = first ? first[1] : 1;
+      return arr.map(v => v ? [v[0] / c0, v[1] / c0, v[2] / c0, v[3] / c0].map(x => +x.toFixed(4)) : null);
+    };
+    const raws = { '平均股价': data.avg_k, '红利低波ETF': data.etfdiv_k, '中证2000增强ETF': data.etf2000e_k };
+    const hollow = c => ({ color: 'rgba(0,0,0,0)', color0: 'rgba(0,0,0,0)',
+      borderColor: c, borderColor0: c });
+    const zoomCfg = [
+      { type: 'inside', xAxisIndex: [0], start: 70, end: 100 },
+      { type: 'slider', xAxisIndex: [0], bottom: 8, height: 18, start: 70, end: 100,
+        borderColor: T.axisLine, backgroundColor: 'transparent', fillerColor: T.zoomFill,
+        handleStyle: { color: T.zoomHandle }, moveHandleStyle: { color: T.zoomHandle },
+        textStyle: { color: T.axisText },
+        dataBackground: { lineStyle: { color: T.splitLine }, areaStyle: { color: T.splitLine } } }
+    ];
+    klineChart.setOption({
+      animation: false,
+      textStyle: { color: T.text },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross', lineStyle: { color: T.cross }, crossStyle: { color: T.cross } },
+        backgroundColor: T.tooltipBg, borderColor: T.tooltipBorder, borderWidth: 1,
+        formatter: params => {
+          const date = params && params.length ? params[0].axisValue : '';
+          let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+          for (const p of params) {
+            const raw = raws[p.seriesName] && raws[p.seriesName][p.dataIndex];
+            if (!raw || !Array.isArray(p.data)) continue;
+            const [o, c, lo, hi] = raw;
+            const cc = c >= o ? T.buy : T.sell;
+            html += `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;`
+                  + `background:${p.color};margin-right:5px"></span>${p.seriesName}: `
+                  + `<span style="color:${cc}">开 ${o.toFixed(2)}　高 ${hi.toFixed(2)}　低 ${lo.toFixed(2)}`
+                  + `　收 <b>${c.toFixed(2)}</b></span>　<span style="color:${T.muted}">归一 ${p.data[1].toFixed(2)}</span></div>`;
+          }
+          return html;
+        }
+      },
+      legend: {
+        data: ['平均股价', '红利低波ETF', '中证2000增强ETF'], top: 10,
+        textStyle: { color: T.muted, fontSize: 12 }, itemWidth: 16, itemHeight: 10
+      },
+      grid: { left: 62, right: 30, top: 44, bottom: 46 },
+      xAxis: { type: 'category', data: D, boundaryGap: true,
+        axisLine: { lineStyle: { color: T.axisLine } },
+        axisLabel: { color: T.axisText } },
+      yAxis: { scale: true, name: '归一化（期初=1）', nameTextStyle: { color: T.muted },
+        axisLabel: { color: T.axisText, formatter: v => v.toFixed(1) },
+        splitLine: { lineStyle: { color: T.splitLine } } },
+      dataZoom: zoomCfg,
+      series: [
+        { name: '红利低波ETF', type: 'candlestick', data: norm(data.etfdiv_k),
+          itemStyle: hollow(T.etfdiv), barWidth: '45%',
+          large: true, largeThreshold: 600 },
+        { name: '中证2000增强ETF', type: 'candlestick', data: norm(data.etf2000e_k),
+          itemStyle: hollow(T.etf2000e), barWidth: '45%',
+          large: true, largeThreshold: 600 },
+        { name: '平均股价', type: 'candlestick', data: norm(data.avg_k),
+          itemStyle: { ...kItemStyle, opacity: 0.75 }, barWidth: '45%',
+          large: true, largeThreshold: 600 }
+      ]
+    }, true);
+    klineChart.resize();
+    return;
+  }
+
+  // ---- 分列模式：三个子图共用时间轴 ----
+  const grids = [
+    { top: 40, height: '26%' },
+    { top: '35%', height: '26%' },
+    { top: '64%', height: '26%' }
+  ].map(g => ({ ...g, left: 62, right: 30 }));
+  const kSeries = (name, arr, gi, yi) => ({
+    name, type: 'candlestick', data: arr,
+    xAxisIndex: gi, yAxisIndex: yi,
+    itemStyle: kItemStyle,
+    large: true, largeThreshold: 600
+  });
+
+  klineChart.setOption({
+    animation: false,
+    textStyle: { color: T.text },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross', lineStyle: { color: T.cross }, crossStyle: { color: T.cross } },
+      backgroundColor: T.tooltipBg,
+      borderColor: T.tooltipBorder,
+      borderWidth: 1,
+      formatter: params => {
+        const date = params && params.length ? params[0].axisValue : '';
+        let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+        for (const p of params) {
+          if (!Array.isArray(p.data)) continue;         // 159552 上市前为 null
+          const [o, c, lo, hi] = p.data;
+          const cc = c >= o ? T.buy : T.sell;
+          const chg = o ? ((c / o - 1) * 100) : 0;
+          html += `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;`
+                + `background:${p.color};margin-right:5px"></span>${p.seriesName}: `
+                + `<span style="color:${cc}">开 ${o.toFixed(2)}　高 ${hi.toFixed(2)}　低 ${lo.toFixed(2)}`
+                + `　收 <b>${c.toFixed(2)}</b>（${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%）</span></div>`;
+        }
+        return html;
+      }
+    },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    grid: grids,
+    xAxis: [0, 1, 2].map(gi => ({
+      type: 'category', data: D, gridIndex: gi, boundaryGap: true,
+      axisLine: { lineStyle: { color: T.axisLine } },
+      axisLabel: { show: gi === 2, color: T.axisText },
+      axisTick: { show: gi === 2 }
+    })),
+    yAxis: [
+      { scale: true, gridIndex: 0, name: '平均股价(元)', nameTextStyle: { color: T.muted },
+        axisLabel: { color: T.axisText }, splitLine: { lineStyle: { color: T.splitLine } } },
+      { scale: true, gridIndex: 1, name: '红利低波ETF(元)', nameTextStyle: { color: T.muted },
+        axisLabel: { color: T.axisText }, splitLine: { lineStyle: { color: T.splitLine } } },
+      { scale: true, gridIndex: 2, name: '中证2000增强ETF(元)', nameTextStyle: { color: T.muted },
+        axisLabel: { color: T.axisText }, splitLine: { lineStyle: { color: T.splitLine } } }
+    ],
+    dataZoom: [
+      { type: 'inside', xAxisIndex: [0, 1, 2], start: 70, end: 100 },
+      { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 8, height: 18, start: 70, end: 100,
+        borderColor: T.axisLine,
+        backgroundColor: 'transparent',
+        fillerColor: T.zoomFill,
+        handleStyle: { color: T.zoomHandle },
+        moveHandleStyle: { color: T.zoomHandle },
+        textStyle: { color: T.axisText },
+        dataBackground: { lineStyle: { color: T.splitLine }, areaStyle: { color: T.splitLine } } }
+    ],
+    series: [
+      kSeries('平均股价', data.avg_k, 0, 0),
+      kSeries('红利低波ETF', data.etfdiv_k, 1, 1),
+      kSeries('中证2000增强ETF', data.etf2000e_k, 2, 2)
+    ]
+  }, true);
+  klineChart.resize();
 }
 </script>
 </body>

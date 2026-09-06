@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>做T复盘演练 · 159552</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="echarts.min.js"></script>
+<style>
+  :root { --bg:#14161a; --panel:#1d2127; --line:#2c313a; --fg:#d7dce2;
+          --dim:#8a919c; --red:#ec5353; --green:#51b15b; --gold:#e0a93e; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.6 "Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1200px; margin:0 auto; padding:16px; }
+  h1 { font-size:18px; margin:4px 0 12px; }
+  h1 small { color:var(--dim); font-weight:normal; font-size:12px; margin-left:8px; }
+  .layout { display:flex; gap:14px; }
+  .chart-box { flex:1; background:var(--panel); border:1px solid var(--line);
+               border-radius:8px; padding:8px; }
+  #chart { width:100%; height:520px; }
+  .side { width:300px; display:flex; flex-direction:column; gap:10px; }
+  .card { background:var(--panel); border:1px solid var(--line);
+          border-radius:8px; padding:12px; }
+  .card h3 { margin:0 0 8px; font-size:13px; color:var(--dim); font-weight:normal; }
+  .big { font-size:22px; font-weight:600; }
+  .kv { display:flex; justify-content:space-between; margin:2px 0; }
+  .kv span:first-child { color:var(--dim); }
+  .btns { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  button { padding:10px; border:1px solid var(--line); border-radius:6px;
+           background:#262b33; color:var(--fg); cursor:pointer; font-size:14px; }
+  button:hover { background:#30363f; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  .sell { border-color:var(--green); color:var(--green); }
+  .buy  { border-color:var(--red); color:var(--red); }
+  .warn { color:var(--gold); font-size:12px; min-height:18px; }
+  #ops { font-size:12px; color:var(--dim); max-height:120px; overflow:auto; }
+  .up { color:var(--red); } .down { color:var(--green); }
+  .mask { position:fixed; inset:0; background:rgba(0,0,0,.65); display:none;
+          align-items:center; justify-content:center; z-index:10;
+          pointer-events:none; }
+  .modal { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+           padding:24px; width:420px; pointer-events:auto; cursor:move;
+           position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); }
+  .modal button { cursor:pointer; }
+  .modal .opt { cursor:auto; }
+  .modal h2 { margin:0 0 12px; font-size:16px; cursor:move; user-select:none; }
+  .modal .row { display:flex; justify-content:space-between; margin:6px 0; }
+  .modal .opt { font-size:12px; color:var(--dim); max-height:140px;
+                overflow:auto; margin-top:8px; }
+  #nextDay { width:100%; margin-top:14px; background:#2b4a67; border-color:#3a6a94; }
+  .hint { color:var(--dim); font-size:12px; margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>做T复盘演练 <small id="subtitle">加载中…（T+1 · 买卖各万1 · 数据源: 159552 五分钟K线）</small></h1>
+  <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
+    <input type="date" id="datePick"
+           style="padding:6px;background:#262b33;color:var(--fg);border:1px solid var(--line);border-radius:6px">
+    <button id="btnGo" style="padding:6px 14px">指定日期演练</button>
+    <button id="btnRand" style="padding:6px 14px">随机一天</button>
+  </div>
+  <div class="layout">
+    <div class="chart-box"><div id="chart"></div></div>
+    <div class="side">
+      <div class="card">
+        <h3>账户（期初净值 1.000）</h3>
+        <div class="kv"><span>当前市值</span><span class="big" id="nav">1.000</span></div>
+        <div class="kv"><span>仓位</span><span id="pos">满仓</span></div>
+        <div class="kv"><span>现金</span><span id="cash">0.000</span></div>
+        <div class="kv"><span>较昨收</span><span id="chg">-</span></div>
+        <div class="warn" id="warn"></div>
+      </div>
+      <div class="card">
+        <h3>操作（快捷键：回车/空格=下一根，S=卖一半，B=全接，U=撤回）</h3>
+        <div class="btns" style="grid-template-columns:1fr 1fr 1fr">
+          <button id="btnNext" style="grid-column:1/3">下一根 ⏎</button>
+          <button id="btnEnd">收工</button>
+          <button class="sell" id="btnSell33">卖出1/3</button>
+          <button class="sell" id="btnSell50">卖出1/2 (S)</button>
+          <button class="sell" id="btnSellAll">全部卖出</button>
+          <button class="buy" id="btnBuy33">买入1/3</button>
+          <button class="buy" id="btnBuy50">买入1/2</button>
+          <button class="buy" id="btnBuyAll">全接回 (B)</button>
+        </div>
+        <button id="btnUndo" style="width:100%;margin-top:8px">撤回 (U)</button>
+        <div id="ops"></div>
+      </div>
+      <div class="card">
+        <h3>历史战绩</h3>
+        <div id="stats">-</div>
+      </div>
+    </div>
+  </div>
+  <div class="hint">练法：上午 10:00~11:30 找冲高乏力卖点，午后 13:25~14:30 找接回点；14:30 前必须接回满仓。判断不出就按纪律执行，别追求完美。<br>
+  MACD 四色柱（与主页一致）：<span style="color:#ef5350">红=零上放大</span>　<span style="color:#2196f3">蓝=红柱缩头</span>　<span style="color:#4caf50">绿=零下放大</span>　<span style="color:#fdd835">黄=绿柱缩头</span>　·　DIF副图：<span style="color:#c9d4e8">灰白=DIF</span>　<span style="color:#fca311">橙=DEA</span>　<span style="color:#ef5350">▲买</span>/<span style="color:#4caf50">▼卖</span>=方案C拐点信号　·　U 键撤回上一步</div>
+</div>
+
+<div class="mask" id="mask">
+  <div class="modal">
+    <h2 id="mTitle">当日结算</h2>
+    <div class="row"><span>你的收益</span><b id="mUser"></b></div>
+    <div class="row"><span>持有不动</span><b id="mHold"></b></div>
+    <div class="row"><span>当日最优（天花板）</span><b id="mOpt"></b></div>
+    <div class="row"><span>评分</span><b id="mScore"></b></div>
+    <div class="opt" id="mOptTrades"></div>
+    <div class="hint" style="margin-top:6px">K线图已展开全天走势：<span style="color:#2196f3">蓝色pin=最优卖</span> / <span style="color:#e0a93e">金色pin=最优买</span>，圆点是你自己的操作</div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button id="retryDay" style="flex:1;background:#4a3a2b;border-color:#8a6a3e">再来一次（同一天）</button>
+      <button id="nextDay" style="flex:1;margin-top:0">再来一天（随机）</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const FEE = 0.0001;
+const chart = echarts.init(document.getElementById('chart'));
+let bars = [], idx = -1, date = null, fixedDate = null, prevClose = null;
+let shOld = 0, shNew = 0, cash = 0, pending = null, trips = [], ops = [], marks = [];
+let done = false;
+let history = [];   // 撤回快照栈
+let optMarks = [];  // 结算后展示的"完美答案"标记
+
+function snapshot() {
+  history.push({ idx, shOld, shNew, cash,
+    pending: pending ? { ...pending } : null,
+    trips: trips.map(t => [...t]), ops: [...ops], marks: [...marks] });
+}
+
+function undo() {
+  if (done || !history.length) return;
+  const s = history.pop();
+  idx = s.idx; shOld = s.shOld; shNew = s.shNew; cash = s.cash;
+  pending = s.pending; trips = s.trips; ops = s.ops; marks = s.marks;
+  document.getElementById('ops').innerHTML = ops.map(o => o + '<br>').join('');
+  log('↩ 撤回到上一状态');
+  render();
+}
+
+const fmtPct = x => (x >= 0 ? '+' : '') + (x * 100).toFixed(2) + '%';
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+function render() {
+  const base = prevClose || bars[0].o;
+  if (idx < 0) {   // 开盘揭晓阶段：只出开盘价和涨跌，不出K线
+    const gap = bars[0].o / base - 1;
+    const gTxt = (gap >= 0 ? '+' : '') + (gap * 100).toFixed(2) + '%';
+    chart.setOption({
+      title: { text: `今日开盘 ${bars[0].o.toFixed(3)}  较昨收 ${gTxt}\n\n按回车 / 点"开始"出第一根K线`,
+               left: 'center', top: '40%',
+               textStyle: { color: gap >= 0 ? '#ec5353' : '#51b15b',
+                            fontSize: 18, lineHeight: 30 } },
+      xAxis: [{ data: [] }, { data: [] }, { data: [] }],
+      series: [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }],
+    });
+    updatePanel(bars[0].o);
+    return;
+  }
+  const vis = bars.slice(0, idx + 1);
+  const times = vis.map(b => b.t);
+  const price = vis[idx].c;
+  chart.setOption({
+    title: { text: '' },
+    backgroundColor: 'transparent',
+    animation: false,
+    grid: [{ left: 60, right: 20, top: 30, height: '44%' },
+           { left: 60, right: 20, top: '54%', height: '13%' },
+           { left: 60, right: 20, top: '73%', height: '19%' }],
+    xAxis: [
+      { type: 'category', data: times, gridIndex: 0,
+        axisLabel: { show: false } },
+      { type: 'category', data: times, gridIndex: 1,
+        axisLabel: { show: false } },
+      { type: 'category', data: times, gridIndex: 2,
+        axisLabel: { color: '#8a919c' } },
+    ],
+    yAxis: [
+      { scale: true, gridIndex: 0, splitLine: { lineStyle: { color: '#2c313a' } },
+        axisLabel: { color: '#8a919c' } },
+      { scale: true, gridIndex: 1, splitLine: { show: false },
+        axisLabel: { color: '#8a919c' } },
+      { scale: true, gridIndex: 2, splitLine: { show: false },
+        axisLabel: { color: '#8a919c' } },
+    ],
+    series: [
+      { name: '5分K', type: 'candlestick',
+        data: vis.map(b => [b.o, b.c, b.l, b.h]),
+        itemStyle: { color: '#ec5353', color0: '#51b15b',
+                     borderColor: '#ec5353', borderColor0: '#51b15b' },
+        markLine: { symbol: 'none', silent: true, animation: false,
+          lineStyle: { color: '#8a919c', type: 'dashed', width: 1 },
+          label: { fontSize: 10, color: '#8a919c', formatter: '开盘 {c}' },
+          data: [{ yAxis: bars[0].o }] },
+        markPoint: { symbolSize: 40, label: { fontSize: 10 }, data: marks.concat(optMarks) } },
+      { name: 'VWAP', type: 'line', data: vis.map(b => b.vwap),
+        showSymbol: false, lineStyle: { color: '#e0a93e', width: 1 } },
+      { name: 'MACD柱', type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
+        data: vis.map((b, j) => {
+          // 四色柱（通达信口径，与主页一致）：红=零上放大 蓝=红柱缩头
+          // 绿=零下放大 黄=绿柱缩头
+          const m = b.hist, p = j > 0 ? vis[j - 1].hist : null;
+          let color;
+          if (m >= 0) color = (p != null && p > 0 && m < p) ? '#2196f3' : '#ef5350';
+          else color = (p != null && p < 0 && m > p) ? '#fdd835' : '#4caf50';
+          return { value: m, itemStyle: { color } };
+        }) },
+      // DIF/DEA 独立副图（与主站方案C同口径 17/34/9），标注拐点买卖点
+      { name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2,
+        data: vis.map(b => b.dif), showSymbol: false,
+        lineStyle: { width: 1.2, color: '#c9d4e8' }, itemStyle: { color: '#c9d4e8' },
+        markPoint: { symbolSize: 36, label: { fontSize: 10 },
+          data: vis.filter(b => b.bsig || b.ssig).map(b => ({
+            coord: [b.t, b.dif],
+            value: b.bsig ? '买' : '卖',
+            symbol: 'triangle', symbolRotate: b.bsig ? 0 : 180,
+            itemStyle: { color: b.bsig ? '#ef5350' : '#4caf50' },
+            label: { color: b.bsig ? '#ef5350' : '#4caf50' },
+          })) } },
+      { name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2,
+        data: vis.map(b => b.dea), showSymbol: false,
+        lineStyle: { width: 1.2, color: '#fca311' }, itemStyle: { color: '#fca311' } },
+    ],
+  });
+  updatePanel(price);
+}
+
+function nav(price) { return (shOld + shNew) * price + cash; }
+
+function updatePanel(price) {
+  document.getElementById('nav').textContent = nav(price).toFixed(3);
+  document.getElementById('nav').className = 'big ' + (nav(price) >= 1 ? 'up' : 'down');
+  document.getElementById('cash').textContent = cash.toFixed(3);
+  const posPct = (shOld + shNew) * price / nav(price) * 100;
+  document.getElementById('pos').textContent =
+    posPct.toFixed(0) + '%' + (cash > 1e-9 ? '（持币待接回）' : '');
+  const base = prevClose || bars[0].o;
+  const chg = price / base - 1;
+  const chgEl = document.getElementById('chg');
+  chgEl.textContent = fmtPct(chg);
+  chgEl.className = chg >= 0 ? 'up' : 'down';
+  const t = idx < 0 ? '09:30' : bars[idx].t;
+  document.getElementById('warn').textContent =
+    (t >= '14:30' && cash > 1e-9) ? '⚠ 已过 14:30，按纪律立即接回！' : '';
+  document.getElementById('btnNext').textContent = idx < 0 ? '开始 ⏎' : '下一根 ⏎';
+}
+
+function log(s) {
+  const el = document.getElementById('ops');
+  el.innerHTML += s + '<br>';
+  el.scrollTop = el.scrollHeight;
+}
+
+function doSell(f) {
+  if (done || idx < 0) return;
+  const b = bars[idx], price = b.c;
+  const total = shOld + shNew;
+  const sellSh = Math.min(total * f, shOld);   // 只能卖隔夜可卖部分
+  if (sellSh <= 1e-12) { log('✗ 无可卖隔夜底仓（当日买入已锁定）'); return; }
+  snapshot();
+  shOld -= sellSh;
+  cash += sellSh * price * (1 - FEE);
+  pending = { t: b.t, price };
+  const tag = f === 1 ? '全卖' : '卖' + (f === 0.5 ? '1/2' : '1/3');
+  ops.push(`${b.t} ${tag}@${price.toFixed(3)}`);
+  marks.push({ coord: [b.t, price], value: tag, itemStyle: { color: '#51b15b' } });
+  log(`${b.t} ${tag} @ ${price.toFixed(3)}`);
+  render();
+}
+
+function doBuy(f) {
+  if (done || idx < 0) return;
+  const b = bars[idx], price = b.c;
+  if (cash <= 1e-9) { log('✗ 无现金可买回'); return; }
+  snapshot();
+  const spend = cash * f;
+  shNew += spend * (1 - FEE) / price;
+  cash -= spend;
+  const tag = f === 1 ? '全接' : '买' + (f === 0.5 ? '1/2' : '1/3');
+  if (pending && cash <= 1e-9) {   // 现金全部接回才算一个完整回合
+    trips.push([pending.t, pending.price, b.t, price]);
+    pending = null;
+  }
+  ops.push(`${b.t} ${tag}@${price.toFixed(3)}`);
+  marks.push({ coord: [b.t, price], value: tag, itemStyle: { color: '#ec5353' } });
+  log(`${b.t} ${tag} @ ${price.toFixed(3)}`);
+  render();
+}
+
+function next() {
+  if (done) return;
+  if (idx >= bars.length - 1) { finish(false); return; }
+  snapshot();
+  idx++;
+  render();
+  if (idx === bars.length - 1) finish(false);
+}
+
+async function finish(quitEarly) {
+  if (done) return;
+  done = true;
+  const lastPrice = idx < 0 ? bars[0].o : bars[idx].c;
+  const userRet = nav(lastPrice) - 1;
+  const holdRet = lastPrice / bars[0].c - 1;
+  const opt = await api('/api/practice/optimal?date=' + date);
+  const optRet = opt.ok ? opt.ret : 0;
+  let scoreDesc;
+  if (optRet > 1e-6) {
+    const s = Math.max(userRet, 0) / optRet * 100;
+    scoreDesc = s.toFixed(0) + ' 分（吃到最优空间的 ' + s.toFixed(0) + '%）';
+  } else {
+    scoreDesc = '当日无T空间，' + (userRet >= holdRet - 1e-9 ? '守住了' : '倒亏了');
+  }
+  document.getElementById('mUser').textContent = fmtPct(userRet);
+  document.getElementById('mUser').className = userRet >= 0 ? 'up' : 'down';
+  document.getElementById('mHold').textContent = fmtPct(holdRet);
+  document.getElementById('mOpt').textContent = fmtPct(optRet);
+  document.getElementById('mScore').textContent = scoreDesc;
+  document.getElementById('mOptTrades').innerHTML = opt.ok && opt.trades.length
+    ? '最优动作：<br>' + opt.trades.map(t => `${t[0]} ${t[1]} @ ${t[2]}`).join('<br>')
+    : '最优动作：全天不动';
+  // 展开全天K线，图上标注完美答案（菱形钉标记）与自己的操作对比
+  idx = bars.length - 1;
+  if (opt.ok && opt.trades.length) {
+    optMarks = opt.trades.map(t => ({
+      coord: [t[0], t[2]],
+      value: t[1] === '卖出' ? '优卖' : '优买',
+      symbol: 'pin', symbolSize: 46,
+      itemStyle: { color: t[1] === '卖出' ? '#2196f3' : '#e0a93e' },
+      label: { fontSize: 10, color: '#14161a' },
+    }));
+  }
+  render();
+  const modal = document.querySelector('.modal');
+  modal.style.left = '50%'; modal.style.top = '50%';
+  modal.style.transform = 'translate(-50%,-50%)';
+  document.getElementById('mask').style.display = 'flex';
+  await api('/api/practice/log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date, ops: ops.join('|'), trips: trips.length,
+      user_ret: +(userRet * 100).toFixed(3), hold_ret: +(holdRet * 100).toFixed(3),
+      optimal_ret: +(optRet * 100).toFixed(3), quit_early: quitEarly }),
+  });
+  loadStats();
+}
+
+async function loadStats() {
+  const s = await api('/api/practice/stats');
+  if (!s.ok || !s.rows.length) {
+    document.getElementById('stats').textContent = '暂无记录';
+    return;
+  }
+  const n = s.rows.length;
+  const tripsN = s.rows.reduce((a, r) => a + (+r.trips), 0);
+  const ex = s.rows.reduce((a, r) => a + (+r.user_ret - +r.hold_ret), 0) / n;
+  document.getElementById('stats').innerHTML =
+    `已练 <b>${n}</b> 天 / <b>${tripsN}</b> 回合<br>平均超额（对持有不动）: <b class="${ex >= 0 ? 'up' : 'down'}">${ex >= 0 ? '+' : ''}${ex.toFixed(2)}pp</b>`;
+}
+
+async function newDay(d) {
+  const q = d ? '?date=' + d : '';
+  const r = await api('/api/practice/day' + q);
+  if (!r.ok) { alert(r.error || '加载失败'); return; }
+  date = r.date;
+  bars = r.bars;
+  prevClose = r.prev_close;
+  idx = -1; done = false;
+  shOld = 1 / bars[0].c; shNew = 0; cash = 0;
+  pending = null; trips = []; ops = []; marks = []; history = []; optMarks = [];
+  document.getElementById('ops').innerHTML = '';
+  document.getElementById('subtitle').textContent =
+    `演练日 ${date}（${r.range[0]} ~ ${r.range[1]} 共${bars.length}根）`;
+  const dp = document.getElementById('datePick');
+  dp.min = r.range[0]; dp.max = r.range[1]; dp.value = date;
+  document.getElementById('mask').style.display = 'none';
+  render();   // 停在开盘揭晓界面，等用户点击"开始"
+}
+
+document.getElementById('btnNext').onclick = next;
+document.getElementById('btnSell33').onclick = () => doSell(1 / 3);
+document.getElementById('btnSell50').onclick = () => doSell(0.5);
+document.getElementById('btnSellAll').onclick = () => doSell(1);
+document.getElementById('btnBuy33').onclick = () => doBuy(1 / 3);
+document.getElementById('btnBuy50').onclick = () => doBuy(0.5);
+document.getElementById('btnBuyAll').onclick = () => doBuy(1);
+document.getElementById('btnEnd').onclick = () => finish(true);
+document.getElementById('nextDay').onclick = () => newDay();
+document.getElementById('retryDay').onclick = () => newDay(date);
+document.getElementById('btnRand').onclick = () => newDay();
+document.getElementById('btnGo').onclick = () => {
+  const v = document.getElementById('datePick').value;
+  if (!v) { alert('先选一个日期'); return; }
+  newDay(v);
+};
+document.getElementById('btnUndo').onclick = undo;
+
+// 结算弹窗可拖动：整卡可拖（按钮和可滚动列表除外），首次拖动从居中定位切换为自由定位
+(function () {
+  const modal = document.querySelector('.modal');
+  let dragging = false, offX = 0, offY = 0;
+  modal.addEventListener('mousedown', e => {
+    if (e.target.closest('button') || e.target.closest('.opt')) return;
+    const r = modal.getBoundingClientRect();
+    modal.style.transform = 'none';
+    modal.style.left = r.left + 'px';
+    modal.style.top = r.top + 'px';
+    offX = e.clientX - r.left;
+    offY = e.clientY - r.top;
+    dragging = true;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    modal.style.left = Math.max(0, Math.min(window.innerWidth - 80, e.clientX - offX)) + 'px';
+    modal.style.top = Math.max(0, Math.min(window.innerHeight - 60, e.clientY - offY)) + 'px';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+})();
+document.addEventListener('keydown', e => {
+  if (document.getElementById('mask').style.display === 'flex') return;
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); next(); }
+  else if (e.key.toLowerCase() === 's') doSell(0.5);
+  else if (e.key.toLowerCase() === 'b') doBuy(1);
+  else if (e.key.toLowerCase() === 'u') undo();
+});
+
+loadStats();
+newDay(new URLSearchParams(location.search).get('date'));
+</script>
+</body>
+</html>
