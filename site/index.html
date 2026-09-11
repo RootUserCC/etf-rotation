@@ -183,6 +183,7 @@
   #dailyChart { width: 100%; height: 240px; padding: 0 6px; }
   #ddChart { width: 100%; height: 260px; padding: 0 6px; }
   #rollChart { width: 100%; height: 260px; padding: 0 6px; }
+  #altChart { width: 100%; height: 300px; padding: 0 6px; }
   #sigBanner {
     display: none; margin: 16px 20px 0; padding: 13px 18px; border-radius: 14px;
     font-size: 14px; font-weight: 600; border: 1px solid;
@@ -373,6 +374,7 @@
   <div class="topbar-right">
     <span class="status-pill" id="status">加载中…</span>
     <span class="updated" id="updated"></span>
+    <a class="btn" href="ai.html" title="AI 题材分类">AI</a>
     <button class="btn" id="refreshBtn" title="刷新数据">⟳</button>
     <button class="btn" id="themeBtn" title="切换主题">🌓</button>
   </div>
@@ -414,6 +416,15 @@
     <span class="hint">平均股价 / 红利低波ETF / 中证2000增强ETF（不复权真实价格，2024-06-28 前无 159552 数据）· 叠加模式按各自期初=1 归一化（实心蜡烛=平均股价，描边蜡烛=ETF）· 拖动下方滑块或滚轮缩放</span>
   </div>
   <div id="klineChart"></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2>抗震荡对照：买入确认</h2>
+    <span class="hint">对照口径：DIF 拐点次日仍上行才确认买入（信号顺延1天，T+2开盘买入），卖出与费用不变 · 用于观察震荡市"晚一天买"的减亏效果（回测：年化 -0.5pp 换回撤 -1.4pp、换仓少 22 次）</span>
+  </div>
+  <div class="sub" id="altStats" style="padding:0 6px 6px"></div>
+  <div id="altChart"></div>
 </div>
 
 <div class="bench-grid">
@@ -515,6 +526,7 @@ let klineChart = null;
 let dailyChart = null;
 let ddChart = null;
 let rollChart = null;
+let altChart = null;
 const benchCharts = {};
 let lastData = null;
 let klineMode = false;   // 走势总览：false=折线，true=K线（平均股价）
@@ -563,7 +575,7 @@ function getTheme() {
 document.getElementById('themeBtn').addEventListener('click', () => {
   const root = document.documentElement;
   root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
-  if (lastData) { render(lastData); renderKline(lastData); renderBenchmarks(lastData); renderDaily(lastData); renderRisk(lastData); renderRolling(lastData); }
+  if (lastData) { render(lastData); renderKline(lastData); renderBenchmarks(lastData); renderDaily(lastData); renderRisk(lastData); renderRolling(lastData); renderAlt(lastData); }
 });
 let refreshing = false;
 document.getElementById('refreshBtn').addEventListener('click', () => {
@@ -611,11 +623,12 @@ function loadData() {
     renderSignalAlert(data);
     renderRisk(data);
     renderRolling(data);
+    renderAlt(data);
     renderLegStats(data);
     renderTable(data);
   }).catch(e => {
     document.getElementById('err').style.display = 'block';
-    console.error(e);
+    console.error(e.stack || e);
   });
 }
 
@@ -658,7 +671,19 @@ function renderStatus(data) {
   const lastTrade = data.trades[data.trades.length - 1];
   const lastSig = lastTrade ? lastTrade.date : '-';
 
-  el.innerHTML = `${hold}　|　均价 ${avgNow?.toFixed(2)}　|　DIF ${lastDIF?.toFixed(4)}${difDir}(${difPos})　|　上次换仓 ${lastSig}`;
+  // 防守池双择优（512890 红利低波 / 159201 自由现金流，近20日动量）
+  const defName = c => c === '159201' ? '自由现金流' : '红利低波';
+  let dpTxt = '';
+  const dp = data.defense_pick;
+  if (dp) {
+    const m1 = dp.mom_890 == null ? 'NA' : (dp.mom_890 * 100).toFixed(2) + '%';
+    const m2 = dp.mom_201 == null ? 'NA' : (dp.mom_201 * 100).toFixed(2) + '%';
+    dpTxt = dp.in_defense
+      ? `　|　防守择优: 持有${defName(dp.holding_def)}（近20日 红利低波${m1} / 现金流${m2}）`
+      : `　|　防守择优: 若切防守选${defName(dp.next_pick)}（近20日 红利低波${m1} / 现金流${m2}，截至${dp.mom_date}）`;
+  }
+
+  el.innerHTML = `${hold}　|　均价 ${avgNow?.toFixed(2)}　|　DIF ${lastDIF?.toFixed(4)}${difDir}(${difPos})　|　上次换仓 ${lastSig}${dpTxt}`;
 }
 
 // ===== KPI 指标卡片 =====
@@ -1093,7 +1118,7 @@ function renderDaily(data) {
   dailyChart.resize();
 }
 window.addEventListener('resize', () => {
-  [dailyChart, ddChart, rollChart, klineChart, ...Object.values(benchCharts)].forEach(c => { if (c) c.resize(); });
+  [dailyChart, ddChart, rollChart, klineChart, altChart, ...Object.values(benchCharts)].forEach(c => { if (c) c.resize(); });
 });
 
 // ===== 信号预警：最新收盘若触发换仓信号且与当前持仓不一致，顶部横幅提示次日操作 =====
@@ -1115,7 +1140,10 @@ function renderSignalAlert(data) {
     el.textContent = `⚠️ ${D[N]} 收盘触发买入信号（DIF 零下拐头向上）→ 下个交易日开盘：卖出红利低波ETF，买入进攻仓`;
   } else if (sellSig && holding === 'atk') {
     el.className = 'sell';
-    el.textContent = `⚠️ ${D[N]} 收盘触发卖出信号（DIF 拐头向下）→ 下个交易日开盘：卖出进攻仓，买入红利低波ETF`;
+    const dp = data.defense_pick;
+    const defName = c => c === '159201' ? '自由现金流ETF(159201)' : '红利低波ETF(512890)';
+    const pickTxt = dp && dp.next_pick ? defName(dp.next_pick) : '红利低波ETF';
+    el.textContent = `⚠️ ${D[N]} 收盘触发卖出信号（DIF 拐头向下）→ 下个交易日开盘：卖出进攻仓，买入${pickTxt}`;
   }
 }
 
@@ -1581,6 +1609,63 @@ function render(data) {
   window.addEventListener('resize', () => chart.resize());
 }
 
+// ===== 抗震荡对照：买入确认（信号顺延1天） vs 现行口径 =====
+function renderAlt(data) {
+  const T = getTheme();
+  if (!data.nav_alt || !data.alt_stats) return;
+  if (!altChart) altChart = echarts.init(document.getElementById('altChart'));
+  const D = data.dates, nav = data.nav_strat, alt = data.nav_alt;
+
+  // 统计：现行口径前端现算，对照口径用导出时算好的 alt_stats
+  const years = (new Date(D[D.length - 1]) - new Date(D[0])) / 86400000 / 365;
+  const ann = a => (Math.pow(a[a.length - 1], 1 / years) - 1) * 100;
+  const mdd = a => { let p = a[0], m = 0; for (const v of a) { if (v > p) p = v; const d = v / p - 1; if (d < m) m = d; } return m * 100; };
+  const st = data.alt_stats;
+  document.getElementById('altStats').innerHTML =
+    `现行口径：年化 <b>${ann(nav).toFixed(1)}%</b> / 最大回撤 <b>${mdd(nav).toFixed(1)}%</b> / 换仓 <b>${data.trades.length}</b> 次`
+    + `　⇄　买入确认：年化 <b>${(st.annual * 100).toFixed(1)}%</b> / 最大回撤 <b>${(st.maxdd * 100).toFixed(1)}%</b> / 换仓 <b>${st.trades}</b> 次`;
+
+  altChart.setOption({
+    animation: false,
+    textStyle: { color: T.text },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross', lineStyle: { color: T.cross }, crossStyle: { color: T.cross } },
+      backgroundColor: T.tooltipBg, borderColor: T.tooltipBorder, borderWidth: 1,
+      valueFormatter: v => (v == null ? '-' : (+v).toFixed(3))
+    },
+    legend: { data: ['现行口径', '买入确认(对照)'], top: 6,
+      textStyle: { color: T.muted, fontSize: 12 }, itemWidth: 16, itemHeight: 10 },
+    grid: { left: 62, right: 30, top: 36, bottom: 46 },
+    xAxis: { type: 'category', data: D, boundaryGap: false,
+      axisLine: { lineStyle: { color: T.axisLine } },
+      axisLabel: { color: T.axisText } },
+    yAxis: { type: 'value', scale: true, name: '净值',
+      nameTextStyle: { color: T.muted },
+      axisLabel: { color: T.axisText },
+      splitLine: { lineStyle: { color: T.splitLine } } },
+    dataZoom: [
+      { type: 'inside', xAxisIndex: [0], start: 70, end: 100 },
+      { type: 'slider', xAxisIndex: [0], bottom: 8, height: 18, start: 70, end: 100,
+        borderColor: T.axisLine, backgroundColor: 'transparent', fillerColor: T.zoomFill,
+        handleStyle: { color: T.zoomHandle }, moveHandleStyle: { color: T.zoomHandle },
+        textStyle: { color: T.axisText },
+        dataBackground: { lineStyle: { color: T.splitLine }, areaStyle: { color: T.splitLine } } }
+    ],
+    series: [
+      { name: '现行口径', type: 'line', data: nav,
+        symbol: 'none', lineStyle: { width: 1.6, color: T.etf2000e },
+        itemStyle: { color: T.etf2000e },
+        sampling: 'lttb', large: true, largeThreshold: 400 },
+      { name: '买入确认(对照)', type: 'line', data: alt,
+        symbol: 'none', lineStyle: { width: 1.4, color: T.dea },
+        itemStyle: { color: T.dea },
+        sampling: 'lttb', large: true, largeThreshold: 400 }
+    ]
+  }, true);
+  altChart.resize();
+}
+
 // ===== K线对比：平均股价 / 红利低波ETF / 中证2000增强ETF 三个蜡烛图共用时间轴 =====
 function renderKline(data) {
   const T = getTheme();
@@ -1599,7 +1684,7 @@ function renderKline(data) {
     const norm = arr => {
       const first = arr.find(v => v);
       const c0 = first ? first[1] : 1;
-      return arr.map(v => v ? [v[0] / c0, v[1] / c0, v[2] / c0, v[3] / c0].map(x => +x.toFixed(4)) : null);
+      return arr.map(v => v ? [v[0] / c0, v[1] / c0, v[2] / c0, v[3] / c0].map(x => +x.toFixed(4)) : '-');
     };
     const raws = { '平均股价': data.avg_k, '红利低波ETF': data.etfdiv_k, '中证2000增强ETF': data.etf2000e_k };
     const hollow = c => ({ color: 'rgba(0,0,0,0)', color0: 'rgba(0,0,0,0)',
@@ -1670,7 +1755,7 @@ function renderKline(data) {
     { top: '64%', height: '26%' }
   ].map(g => ({ ...g, left: 62, right: 30 }));
   const kSeries = (name, arr, gi, yi) => ({
-    name, type: 'candlestick', data: arr,
+    name, type: 'candlestick', data: arr.map(v => v || '-'),
     xAxisIndex: gi, yAxisIndex: yi,
     itemStyle: kItemStyle,
     large: true, largeThreshold: 600

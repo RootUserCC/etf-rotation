@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>A股 AI 热门股票 · 题材分类</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    /* 深色主题（默认） */
+    --bg1: #0d1220;
+    --bg2: #161d2e;
+    --card: #1a2233;
+    --card2: #1e2739;
+    --row-alt: #1d2638;
+    --border: #27324a;
+    --border2: #33415e;
+    --text: #e8ecf3;
+    --muted: #8b95a8;
+    --faint: #5b6478;
+    --up: #ff6b6b;
+    --down: #3ddc97;
+    --accent: #4d7cfe;
+    --accent2: #7a5cff;
+    --amber: #f5a623;
+    --accent-soft: rgba(77, 124, 254, 0.14);
+    --grad: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  [data-theme="light"] {
+    --bg1: #eef1f6;
+    --bg2: #f6f8fb;
+    --card: #ffffff;
+    --card2: #fbfcfe;
+    --row-alt: #f7f9fc;
+    --border: #e2e6ee;
+    --border2: #cfd6e2;
+    --text: #1d2733;
+    --muted: #667080;
+    --faint: #9aa3b3;
+    --up: #d43f3a;
+    --down: #2ca02c;
+    --accent: #3b6df0;
+    --accent2: #7a5cff;
+    --amber: #e8940a;
+    --accent-soft: rgba(59, 109, 240, 0.10);
+    --grad: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+    --shadow: 0 6px 18px rgba(30, 40, 60, 0.08);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: linear-gradient(160deg, var(--bg1) 0%, var(--bg2) 100%) fixed;
+    color: var(--text);
+    min-height: 100vh;
+    padding-bottom: 28px;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(600px 320px at 12% -4%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+      radial-gradient(700px 380px at 92% 0%, color-mix(in srgb, var(--accent2) 12%, transparent), transparent 70%);
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    padding: 12px 24px;
+    background: color-mix(in srgb, var(--card) 82%, transparent);
+    backdrop-filter: blur(12px) saturate(1.3);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent) 30%, var(--accent2) 70%, transparent);
+    opacity: 0.55;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand h1 { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; }
+  .brand .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .btn {
+    border: 1px solid var(--border2); background: var(--card2); color: var(--text);
+    border-radius: 8px; padding: 7px 12px; font-size: 14px; cursor: pointer;
+    transition: transform 0.3s, opacity 0.3s;
+    text-decoration: none; display: inline-block;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .search {
+    border: 1px solid var(--border2); background: var(--card2); color: var(--text);
+    border-radius: 8px; padding: 7px 12px; font-size: 13px; width: 200px; outline: none;
+  }
+  .search:focus { border-color: var(--accent); }
+  .search::placeholder { color: var(--faint); }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 20px 0; }
+  .cat-title {
+    font-size: 18px; font-weight: 700; margin: 26px 0 4px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .cat-title::before {
+    content: ''; width: 4px; height: 20px; border-radius: 2px; background: var(--grad);
+  }
+  .cat-desc { font-size: 12.5px; color: var(--muted); margin-bottom: 12px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); overflow: hidden;
+    animation: fadeUp 0.4s ease both;
+  }
+  .card h3 {
+    font-size: 14.5px; font-weight: 700; padding: 12px 14px;
+    background: var(--card2); border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .card h3 .cnt { font-size: 11.5px; font-weight: 400; color: var(--faint); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) { background: var(--row-alt); }
+  .name { font-weight: 600; white-space: nowrap; }
+  .code { color: var(--faint); font-size: 11.5px; font-family: Consolas, monospace; }
+  .note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  mark { background: color-mix(in srgb, var(--amber) 40%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
+
+  /* 回测区 */
+  .bt-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); overflow: hidden; margin-bottom: 14px;
+    animation: fadeUp 0.4s ease both;
+  }
+  .bt-card h3 {
+    font-size: 14.5px; font-weight: 700; padding: 12px 14px;
+    background: var(--card2); border-bottom: 1px solid var(--border);
+  }
+  .bt-best {
+    padding: 16px 14px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  .bt-cond { font-size: 15px; font-weight: 700; }
+  .bt-cond b { color: var(--accent); }
+  .bt-pills { display: flex; gap: 10px; flex-wrap: wrap; }
+  .bt-pill {
+    background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    border-radius: 999px; padding: 5px 12px; font-size: 12.5px; white-space: nowrap;
+  }
+  .bt-pill b { font-weight: 700; }
+  .bt-table-wrap { max-height: 420px; overflow-y: auto; }
+  .bt-table-wrap table th {
+    position: sticky; top: 0; background: var(--card2); font-weight: 600;
+    padding: 8px 14px; text-align: left; font-size: 12px; color: var(--muted);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pos { color: var(--up); }
+  .neg { color: var(--down); }
+
+  .foot { max-width: 1100px; margin: 24px auto 0; padding: 0 20px; font-size: 12px; color: var(--faint); line-height: 1.8; }
+  .hidden { display: none !important; }
+  @media (max-width: 640px) {
+    .wrap { padding: 12px 12px 0; }
+    .search { width: 130px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="logo" width="38" height="38" viewBox="0 0 40 40">
+      <defs>
+        <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#4d7cfe"/>
+          <stop offset="1" stop-color="#7a5cff"/>
+        </linearGradient>
+      </defs>
+      <rect width="40" height="40" rx="10" fill="url(#lg)"/>
+      <text x="20" y="26" text-anchor="middle" font-size="16" fill="#fff" font-weight="bold">AI</text>
+    </svg>
+    <div>
+      <h1>A股 AI 硬件方向热门股票 · 题材分类</h1>
+      <div class="sub">算力基建 + 端侧硬件 · 按产业链细分题材整理 · 2026-09</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <input class="search" id="search" placeholder="搜索 名称/代码/题材">
+    <a class="btn" href="index.html" title="返回主页">🏠</a>
+    <button class="btn" id="themeBtn" title="切换主题">🌓</button>
+  </div>
+</header>
+
+<div class="wrap" id="wrap"></div>
+
+<div class="wrap" id="btWrap"></div>
+
+<div class="foot">
+  说明：题材归类以公司主营业务为准，同一股票常横跨多个题材（如剑桥科技既是光模块又沾液冷），表中仅列其主要标签。
+  名单基于 2026 年上半年盘面热点与公开资料整理，仅为信息归纳，不构成任何投资建议；股市有风险，投资需谨慎。
+</div>
+
+<script>
+// ===== 数据：大类 → 细分题材 → 股票 =====
+const DATA = [
+  { cat: '一、算力硬件（AI 基建）', desc: '2026 年市场绝对主线：北美云厂资本开支上修 + 国产替代双轮驱动', subs: [
+    { sub: '光模块 / CPO（共封装光学）', stocks: [
+      ['300308', '中际旭创', '全球光模块一哥，800G 主力供应商，1.6T 批量交付'],
+      ['300502', '新易盛', '高速光模块龙头，2025 年 4 月低点以来最大涨幅超 10 倍'],
+      ['300394', '天孚通信', '光器件平台型龙头，光引擎/CPO 配套'],
+      ['603083', '剑桥科技', '光模块+宽带终端，海外数据中心客户'],
+      ['002281', '光迅科技', '国内老牌光器件/光模块，央企背景'],
+      ['300570', '太辰光', '光连接器/分路器，CPO 封装集成能力'],
+    ]},
+    { sub: '上游光芯片 / 光器件', stocks: [
+      ['300620', '光库科技', '铌酸锂调制器，光纤器件'],
+    ]},
+    { sub: 'AI 芯片（国产替代）', stocks: [
+      ['300474', '景嘉微', '国产 GPU，JM 系列覆盖图形+智算'],
+      ['002261', '拓维信息', '华为昇腾算力核心伙伴，AI 服务器'],
+      ['000034', '神州数码', '昇腾/鲲鹏整机分销与集成'],
+    ]},
+    { sub: 'AI 服务器 / 整机', stocks: [
+      ['601138', '工业富联', '英伟达链组装中枢，AI 服务器订单饱满'],
+      ['000977', '浪潮信息', '国内 AI 服务器市占率第一'],
+      ['603019', '中科曙光', '高性能计算+海光生态，算力服务'],
+      ['000063', '中兴通讯', '服务器+交换机，算网一体'],
+    ]},
+    { sub: 'PCB / 高速板（算力上游）', stocks: [
+      ['002463', '沪电股份', 'AI 服务器高速 PCB 核心供应商'],
+      ['002916', '深南电路', 'PCB+封装基板，高端产能紧缺'],
+      ['600183', '生益科技', '覆铜板龙头，高速材料涨价受益'],
+      ['002938', '鹏鼎控股', '全球 PCB 龙头，SLP/HDI'],
+      ['002384', '东山精密', 'PCB+精密制造，特斯拉+算力双链'],
+      ['300476', '胜宏科技', '高多层板/HDI，AI 显卡板卡'],
+    ]},
+    { sub: '存储芯片', stocks: [
+      ['603986', '兆易创新', 'NOR Flash 龙头，利基存储+MCU'],
+      ['301308', '江波龙', '存储模组龙头，企业级 SSD 放量'],
+    ]},
+    { sub: '被动元件（MLCC / 电感）', stocks: [
+      ['300408', '三环集团', 'MLCC+电子陶瓷龙头，高容 MLCC 扩产'],
+      ['000636', '风华高科', '国产 MLCC 龙头，车规/服务器放量'],
+      ['002138', '顺络电子', '片式电感龙头，AI 服务器电源电感'],
+      ['603678', '火炬电子', 'MLCC 自产+代理，军工特种电容'],
+      ['603267', '鸿远电子', '军用高可靠 MLCC 为主'],
+      ['002859', '洁美科技', 'MLCC 上游：纸质载带/离型膜龙头'],
+    ]},
+    { sub: '铜缆高速连接', stocks: [
+      ['002130', '沃尔核材', '高速通信线缆龙头，224G 铜缆送样'],
+      ['300913', '兆龙互连', '高速线缆组件，数据中心 DAC'],
+      ['300563', '神宇股份', '射频同轴电缆，高速线材'],
+    ]},
+    { sub: '电源 / UPS', stocks: [
+      ['002851', '麦格米特', '服务器电源，英伟达链核心电源供应商'],
+      ['300870', '欧陆通', '服务器电源适配器/整流模块'],
+      ['002335', '科华数据', 'UPS 龙头+数据中心运营'],
+    ]},
+    { sub: '交换机 / 网络设备', stocks: [
+      ['000938', '紫光股份', '新华三母公司，交换机/服务器双龙头'],
+      ['301165', '锐捷网络', '数据中心交换机，互联网大客户'],
+      ['301191', '菲菱科思', '网络设备 ODM，交换机代工'],
+    ]},
+    { sub: '液冷 / 温控', stocks: [
+      ['002837', '英维克', '精密温控龙头，数据中心液冷全链条'],
+      ['301018', '申菱环境', '数据中心温控，华为链'],
+      ['300990', '同飞股份', '工业温控，液冷机组'],
+      ['603912', '佳力图', '机房环境控制，算力中心温控'],
+      ['300602', '飞荣达', '电磁屏蔽+导热材料'],
+    ]},
+    { sub: '算力租赁 / IDC', stocks: [
+      ['300857', '协创数据', '算力租赁高标，AI 服务器回收+租赁'],
+      ['002929', '润建股份', '通信管维+算力租赁'],
+      ['000815', '美利云', '国资云+数据中心'],
+      ['603881', '数据港', '批发型 IDC，阿里深度绑定'],
+    ]},
+  ]},
+  { cat: '二、端侧 AI / 消费电子（硬件）', desc: 'AI 手机、AIPC、AI 眼镜等终端创新周期', subs: [
+    { sub: 'AI 手机 / AIPC 链', stocks: [
+      ['002475', '立讯精密', '消费电子代工龙头，AI 终端整机'],
+      ['603501', '韦尔股份', 'CIS 图像传感器龙头'],
+    ]},
+    { sub: 'AIoT / 端侧芯片', stocks: [
+      ['603893', '瑞芯微', '端侧 AI SoC，RK3588 系列'],
+    ]},
+  ]},
+];
+
+// ===== 渲染 =====
+const wrap = document.getElementById('wrap');
+let query = '';
+
+function esc(s) { return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function hl(s) {
+  const e = esc(s);
+  if (!query) return e;
+  const q = esc(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return e.replace(new RegExp('(' + q + ')', 'gi'), '<mark>$1</mark>');
+}
+
+function render() {
+  let html = '';
+  for (const c of DATA) {
+    const subsHtml = [];
+    for (const s of c.subs) {
+      const rows = s.stocks.filter(([code, name, note]) =>
+        !query || name.includes(query) || code.includes(query) ||
+        note.toLowerCase().includes(query.toLowerCase()) || s.sub.includes(query));
+      if (!rows.length) continue;
+      subsHtml.push(`<div class="card"><h3>${hl(s.sub)}<span class="cnt">${rows.length} 只</span></h3>
+        <table>${rows.map(([code, name, note]) =>
+          `<tr><td class="name">${hl(name)}<div class="code">${code}</div></td>
+           <td class="note">${hl(note)}</td></tr>`).join('')}</table></div>`);
+    }
+    if (!subsHtml.length) continue;
+    html += `<div class="cat-title">${esc(c.cat)}</div>
+      <div class="cat-desc">${esc(c.desc)}</div>
+      <div class="grid">${subsHtml.join('')}</div>`;
+  }
+  wrap.innerHTML = html || '<div class="cat-desc" style="margin-top:30px">无匹配结果</div>';
+}
+
+document.getElementById('search').addEventListener('input', e => {
+  query = e.target.value.trim();
+  render();
+});
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const root = document.documentElement;
+  root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
+});
+render();
+
+// ===== 黄柱买入回测结果（ai_yellow_bar.py 导出的 ai_backtest.json） =====
+function pct(x, digits = 1) { return x == null ? '-' : (x * 100).toFixed(digits) + '%'; }
+function signed(x) {
+  if (x == null) return '<td class="num">-</td>';
+  const cls = x > 0 ? 'pos' : 'neg';
+  return `<td class="num ${cls}">${(x * 100).toFixed(2)}%</td>`;
+}
+fetch('ai_backtest.json?_=' + Date.now()).then(r => r.ok ? r.json() : null).then(bt => {
+  if (!bt) return;
+  const b = bt.best;
+  const topRows = bt.top.map((r, i) =>
+    `<tr><td>${i + 1}</td><td>第${r.n}根黄柱</td><td>${esc(r.filter)}</td><td>${esc(r.sell)}</td>
+     <td class="num">${r.trades}</td><td class="num">${pct(r.win)}</td>${signed(r.avg)}
+     <td class="num">${r.pl == null ? '-' : r.pl.toFixed(2)}</td>
+     <td class="num"><b>${r.pf == null ? '-' : r.pf.toFixed(2)}</b></td></tr>`).join('');
+  const stockRows = bt.per_stock.map(s =>
+    `<tr><td class="name">${esc(s.name)}<div class="code">${s.code}</div></td>
+     <td class="num">${s.trades}</td><td class="num">${pct(s.win)}</td>${signed(s.avg)}
+     <td class="num">${s.pl == null ? '-' : s.pl.toFixed(2)}</td></tr>`).join('');
+  document.getElementById('btWrap').innerHTML = `
+    <div class="cat-title">黄柱买入回测（${esc(bt.since)} ~ ${esc(bt.updated)}）</div>
+    <div class="cat-desc">MACD 柱零下缩头为黄柱；第 N 根黄柱收盘买入。共 ${bt.pool} 只 · 200 组条件网格搜索 · 未计手续费滑点，仅供研究参考</div>
+    <div class="bt-card"><h3>最优买卖条件</h3>
+      <div class="bt-best">
+        <div class="bt-cond">第 <b>${b.n}</b> 根黄柱买入（${esc(b.filter)}）→ <b>${esc(b.sell)}</b>卖出</div>
+        <div class="bt-pills">
+          <span class="bt-pill">胜率 <b>${pct(b.win)}</b></span>
+          <span class="bt-pill">平均单笔 <b class="${b.avg > 0 ? 'pos' : 'neg'}">${pct(b.avg, 2)}</b></span>
+          <span class="bt-pill">盈亏比 <b>${b.pl == null ? '-' : b.pl.toFixed(2)}</b></span>
+          <span class="bt-pill">收益因子 <b>${b.pf == null ? '-' : b.pf.toFixed(2)}</b></span>
+          <span class="bt-pill">交易数 <b>${b.trades}</b></span>
+        </div>
+      </div>
+    </div>
+    <div class="bt-card"><h3>条件排行榜 Top 10（按收益因子）</h3>
+      <div class="bt-table-wrap"><table>
+        <tr><th>#</th><th>买入</th><th>过滤</th><th>卖出</th><th class="num">交易数</th><th class="num">胜率</th><th class="num">平均盈亏</th><th class="num">盈亏比</th><th class="num">收益因子</th></tr>
+        ${topRows}</table></div>
+    </div>
+    <div class="bt-card"><h3>最优条件 · 逐股票明细</h3>
+      <div class="bt-table-wrap"><table>
+        <tr><th>股票</th><th class="num">交易数</th><th class="num">胜率</th><th class="num">平均盈亏</th><th class="num">盈亏比</th></tr>
+        ${stockRows}</table></div>
+    </div>`;
+}).catch(() => {});
+</script>
+</body>
+</html>
