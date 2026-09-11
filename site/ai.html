@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<title>A股 AI 热门股票 · 题材分类</title>
+<title>自选股分组 · 题材分类</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
@@ -155,11 +155,23 @@
     padding: 8px 14px; text-align: left; font-size: 12px; color: var(--muted);
     border-bottom: 1px solid var(--border); white-space: nowrap;
   }
+  .bt-table-wrap table th.num { text-align: right; }
   .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .pos { color: var(--up); }
   .neg { color: var(--down); }
 
   .foot { max-width: 1100px; margin: 24px auto 0; padding: 0 20px; font-size: 12px; color: var(--faint); line-height: 1.8; }
+  /* 今日信号 */
+  .sig-alert { border-color: color-mix(in srgb, var(--up) 55%, var(--border)); }
+  .sig-alert h3 { color: var(--up); }
+  .sig-tag {
+    display: inline-block; border-radius: 6px; padding: 3px 8px; margin: 2px 4px 2px 0;
+    font-size: 12.5px; background: var(--card2); border: 1px solid var(--border2);
+  }
+  .sig-tag b { font-weight: 700; }
+  .bar-dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: baseline; }
+  .bar-y { background: #f5a623; } .bar-g { background: #2ca02c; }
+  .bar-r { background: #e0483f; } .bar-b { background: #3b6df0; }
   .hidden { display: none !important; }
   @media (max-width: 640px) {
     .wrap { padding: 12px 12px 0; }
@@ -182,8 +194,8 @@
       <text x="20" y="26" text-anchor="middle" font-size="16" fill="#fff" font-weight="bold">AI</text>
     </svg>
     <div>
-      <h1>A股 AI 硬件方向热门股票 · 题材分类</h1>
-      <div class="sub">算力基建 + 端侧硬件 · 按产业链细分题材整理 · 2026-09</div>
+      <h1>自选股分组 · 题材分类</h1>
+      <div class="sub">来源：自选股分组清单 2026-09-11 整理版 · ETF / PCB / 光纤 / 算力液冷 / 玻纤 / CPO / 存储 / MLCC</div>
     </div>
   </div>
   <div class="topbar-right">
@@ -193,97 +205,105 @@
   </div>
 </header>
 
+<div class="wrap" id="sigWrap"></div>
+
 <div class="wrap" id="wrap"></div>
 
 <div class="wrap" id="btWrap"></div>
 
 <div class="foot">
-  说明：题材归类以公司主营业务为准，同一股票常横跨多个题材（如剑桥科技既是光模块又沾液冷），表中仅列其主要标签。
-  名单基于 2026 年上半年盘面热点与公开资料整理，仅为信息归纳，不构成任何投资建议；股市有风险，投资需谨慎。
+  说明：分组与名单来自《自选股分组清单》（2026-09-11 整理版），同一股票常横跨多个题材，表中仅列其主要标签。
+  胜宏科技为港股（02476），不参与 A 股回测。仅为信息归纳，不构成任何投资建议；股市有风险，投资需谨慎。
 </div>
 
 <script>
-// ===== 数据：大类 → 细分题材 → 股票 =====
+// ===== 数据：大类 → 细分题材 → 股票（来源：自选股分组清单 2026-09-11 整理版） =====
 const DATA = [
-  { cat: '一、算力硬件（AI 基建）', desc: '2026 年市场绝对主线：北美云厂资本开支上修 + 国产替代双轮驱动', subs: [
-    { sub: '光模块 / CPO（共封装光学）', stocks: [
-      ['300308', '中际旭创', '全球光模块一哥，800G 主力供应商，1.6T 批量交付'],
-      ['300502', '新易盛', '高速光模块龙头，2025 年 4 月低点以来最大涨幅超 10 倍'],
-      ['300394', '天孚通信', '光器件平台型龙头，光引擎/CPO 配套'],
-      ['603083', '剑桥科技', '光模块+宽带终端，海外数据中心客户'],
-      ['002281', '光迅科技', '国内老牌光器件/光模块，央企背景'],
-      ['300570', '太辰光', '光连接器/分路器，CPO 封装集成能力'],
+  { cat: 'ETF', desc: '指数 / 主题 ETF：做T与防守配置用', subs: [
+    { sub: 'ETF', stocks: [
+      ['515880', '通信ETF国泰', '通信设备主题 ETF'],
+      ['512890', '红利低波ETF', '红利低波策略，防守配置'],
+      ['512100', '中证1000ETF', '中证1000 指数，做T用'],
+      ['159552', '中证2000增强ETF', '中证2000 指数增强，做T用'],
     ]},
-    { sub: '上游光芯片 / 光器件', stocks: [
-      ['300620', '光库科技', '铌酸锂调制器，光纤器件'],
+  ]},
+  { cat: 'PCB（印制电路板）', desc: '含覆铜板、铜箔等上游材料', subs: [
+    { sub: 'PCB', stocks: [
+      ['002636', '金安国纪', '覆铜板'],
+      ['603186', '华正新材', '覆铜板 / 复合材料'],
+      ['600183', '生益科技', '覆铜板龙头，高速材料涨价受益'],
+      ['301217', '铜冠铜箔', 'PCB 铜箔'],
+      ['002463', '沪电股份', 'AI 服务器高速 PCB 核心供应商'],
+      ['002916', '深南电路', 'PCB+封装基板，高端产能紧缺'],
+      ['603228', '景旺电子', 'PCB 多品类布局'],
+      ['002938', '鹏鼎控股', '全球 PCB 龙头，SLP/HDI'],
+      ['002384', '东山精密', 'PCB+精密制造，特斯拉+算力双链'],
+      ['02476', '胜宏科技', '港股：高多层板/HDI（A股对应 300476），不参与 A 股回测'],
+      ['603175', '超颖电子', 'PCB'],
     ]},
-    { sub: 'AI 芯片（国产替代）', stocks: [
-      ['300474', '景嘉微', '国产 GPU，JM 系列覆盖图形+智算'],
-      ['002261', '拓维信息', '华为昇腾算力核心伙伴，AI 服务器'],
-      ['000034', '神州数码', '昇腾/鲲鹏整机分销与集成'],
+  ]},
+  { cat: '光纤 / 光通信', desc: '光纤光缆为主，上游石英材料列入观察', subs: [
+    { sub: '光纤', stocks: [
+      ['601869', '长飞光纤', '光纤光缆龙头'],
+      ['600522', '中天科技', '光纤光缆 + 海缆'],
+      ['600487', '亨通光电', '光纤光缆 + 海缆'],
+      ['600498', '烽火通信', '光通信设备 / 光纤光缆'],
+      ['603688', '石英股份', '上游材料观察：高纯石英砂 / 石英制品'],
+      ['300395', '菲利华', '上游材料观察：石英玻璃材料'],
     ]},
-    { sub: 'AI 服务器 / 整机', stocks: [
+  ]},
+  { cat: '算力 / 液冷服务', desc: 'AI 服务器整机、温控液冷、算力租赁；芯片标的列入补充', subs: [
+    { sub: '算力液冷服务', stocks: [
       ['601138', '工业富联', '英伟达链组装中枢，AI 服务器订单饱满'],
       ['000977', '浪潮信息', '国内 AI 服务器市占率第一'],
       ['603019', '中科曙光', '高性能计算+海光生态，算力服务'],
-      ['000063', '中兴通讯', '服务器+交换机，算网一体'],
-    ]},
-    { sub: 'PCB / 高速板（算力上游）', stocks: [
-      ['002463', '沪电股份', 'AI 服务器高速 PCB 核心供应商'],
-      ['002916', '深南电路', 'PCB+封装基板，高端产能紧缺'],
-      ['600183', '生益科技', '覆铜板龙头，高速材料涨价受益'],
-      ['002938', '鹏鼎控股', '全球 PCB 龙头，SLP/HDI'],
-      ['002384', '东山精密', 'PCB+精密制造，特斯拉+算力双链'],
-      ['300476', '胜宏科技', '高多层板/HDI，AI 显卡板卡'],
-    ]},
-    { sub: '存储芯片', stocks: [
-      ['603986', '兆易创新', 'NOR Flash 龙头，利基存储+MCU'],
-      ['301308', '江波龙', '存储模组龙头，企业级 SSD 放量'],
-    ]},
-    { sub: '被动元件（MLCC / 电感）', stocks: [
-      ['300408', '三环集团', 'MLCC+电子陶瓷龙头，高容 MLCC 扩产'],
-      ['000636', '风华高科', '国产 MLCC 龙头，车规/服务器放量'],
-      ['002138', '顺络电子', '片式电感龙头，AI 服务器电源电感'],
-      ['603678', '火炬电子', 'MLCC 自产+代理，军工特种电容'],
-      ['603267', '鸿远电子', '军用高可靠 MLCC 为主'],
-      ['002859', '洁美科技', 'MLCC 上游：纸质载带/离型膜龙头'],
-    ]},
-    { sub: '铜缆高速连接', stocks: [
-      ['002130', '沃尔核材', '高速通信线缆龙头，224G 铜缆送样'],
-      ['300913', '兆龙互连', '高速线缆组件，数据中心 DAC'],
-      ['300563', '神宇股份', '射频同轴电缆，高速线材'],
-    ]},
-    { sub: '电源 / UPS', stocks: [
-      ['002851', '麦格米特', '服务器电源，英伟达链核心电源供应商'],
-      ['300870', '欧陆通', '服务器电源适配器/整流模块'],
-      ['002335', '科华数据', 'UPS 龙头+数据中心运营'],
-    ]},
-    { sub: '交换机 / 网络设备', stocks: [
-      ['000938', '紫光股份', '新华三母公司，交换机/服务器双龙头'],
-      ['301165', '锐捷网络', '数据中心交换机，互联网大客户'],
-      ['301191', '菲菱科思', '网络设备 ODM，交换机代工'],
-    ]},
-    { sub: '液冷 / 温控', stocks: [
       ['002837', '英维克', '精密温控龙头，数据中心液冷全链条'],
       ['301018', '申菱环境', '数据中心温控，华为链'],
-      ['300990', '同飞股份', '工业温控，液冷机组'],
-      ['603912', '佳力图', '机房环境控制，算力中心温控'],
-      ['300602', '飞荣达', '电磁屏蔽+导热材料'],
-    ]},
-    { sub: '算力租赁 / IDC', stocks: [
       ['300857', '协创数据', '算力租赁高标，AI 服务器回收+租赁'],
-      ['002929', '润建股份', '通信管维+算力租赁'],
+      ['603629', '利通电子', '算力服务 / 电子制造'],
       ['000815', '美利云', '国资云+数据中心'],
-      ['603881', '数据港', '批发型 IDC，阿里深度绑定'],
+      ['002929', '润建股份', '通信管维+算力租赁'],
+      ['688256', '寒武纪', '补充：国产 AI 芯片'],
+      ['688041', '海光信息', '补充：国产 CPU / DCU'],
+      ['300499', '高澜股份', '补充：液冷温控'],
     ]},
   ]},
-  { cat: '二、端侧 AI / 消费电子（硬件）', desc: 'AI 手机、AIPC、AI 眼镜等终端创新周期', subs: [
-    { sub: 'AI 手机 / AIPC 链', stocks: [
-      ['002475', '立讯精密', '消费电子代工龙头，AI 终端整机'],
-      ['603501', '韦尔股份', 'CIS 图像传感器龙头'],
+  { cat: '玻纤（PCB 上游）', desc: '电子级玻纤布 / 玻纤纱，高速板上游材料', subs: [
+    { sub: '玻纤', stocks: [
+      ['603256', '宏和科技', '电子级玻纤布'],
+      ['301526', '国际复材', '玻纤纱 / 制品'],
+      ['605006', '山东玻纤', '玻纤纱'],
+      ['600176', '中国巨石', '玻纤龙头'],
     ]},
-    { sub: 'AIoT / 端侧芯片', stocks: [
-      ['603893', '瑞芯微', '端侧 AI SoC，RK3588 系列'],
+  ]},
+  { cat: 'CPO / 光模块', desc: '共封装光学与高速光模块', subs: [
+    { sub: 'CPO', stocks: [
+      ['300308', '中际旭创', '全球光模块一哥，800G 主力供应商，1.6T 批量交付'],
+      ['300502', '新易盛', '高速光模块龙头，2025 年 4 月低点以来最大涨幅超 10 倍'],
+      ['300394', '天孚通信', '光器件平台型龙头，光引擎/CPO 配套'],
+      ['002281', '光迅科技', '国内老牌光器件/光模块，央企背景'],
+      ['603083', '剑桥科技', '光模块+宽带终端，海外数据中心客户'],
+    ]},
+  ]},
+  { cat: '存储', desc: '存储芯片设计、模组与分销', subs: [
+    { sub: '存储', stocks: [
+      ['603986', '兆易创新', 'NOR Flash 龙头，利基存储+MCU'],
+      ['001309', '德明利', '存储模组 / 主控'],
+      ['301308', '江波龙', '存储模组龙头，企业级 SSD 放量'],
+      ['688525', '佰维存储', '存储模组'],
+      ['688008', '澜起科技', '内存接口芯片'],
+      ['300475', '香农芯创', '存储产品分销'],
+      ['000021', '深科技', '存储封测 / 模组制造'],
+    ]},
+  ]},
+  { cat: 'MLCC / 被动元件', desc: 'MLCC 整机与上游材料', subs: [
+    { sub: 'MLCC', stocks: [
+      ['000636', '风华高科', '国产 MLCC 龙头，车规/服务器放量'],
+      ['300408', '三环集团', 'MLCC+电子陶瓷龙头，高容 MLCC 扩产'],
+      ['300285', '国瓷材料', 'MLCC 上游：陶瓷粉体'],
+      ['002859', '洁美科技', 'MLCC 上游：纸质载带/离型膜龙头'],
+      ['301566', '达利凯普', 'MLCC'],
+      ['603678', '火炬电子', 'MLCC 自产+代理，军工特种电容'],
     ]},
   ]},
 ];
@@ -301,25 +321,22 @@ function hl(s) {
 }
 
 function render() {
-  let html = '';
+  const cards = [];
   for (const c of DATA) {
-    const subsHtml = [];
     for (const s of c.subs) {
       const rows = s.stocks.filter(([code, name, note]) =>
         !query || name.includes(query) || code.includes(query) ||
-        note.toLowerCase().includes(query.toLowerCase()) || s.sub.includes(query));
+        note.toLowerCase().includes(query.toLowerCase()) || s.sub.includes(query) || c.cat.includes(query));
       if (!rows.length) continue;
-      subsHtml.push(`<div class="card"><h3>${hl(s.sub)}<span class="cnt">${rows.length} 只</span></h3>
+      cards.push(`<div class="card"><h3>${hl(s.sub)}<span class="cnt">${rows.length} 只</span></h3>
         <table>${rows.map(([code, name, note]) =>
           `<tr><td class="name">${hl(name)}<div class="code">${code}</div></td>
            <td class="note">${hl(note)}</td></tr>`).join('')}</table></div>`);
     }
-    if (!subsHtml.length) continue;
-    html += `<div class="cat-title">${esc(c.cat)}</div>
-      <div class="cat-desc">${esc(c.desc)}</div>
-      <div class="grid">${subsHtml.join('')}</div>`;
   }
-  wrap.innerHTML = html || '<div class="cat-desc" style="margin-top:30px">无匹配结果</div>';
+  wrap.innerHTML = cards.length
+    ? `<div class="grid">${cards.join('')}</div>`
+    : '<div class="cat-desc" style="margin-top:30px">无匹配结果</div>';
 }
 
 document.getElementById('search').addEventListener('input', e => {
@@ -331,6 +348,41 @@ document.getElementById('themeBtn').addEventListener('click', () => {
   root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
 });
 render();
+
+// ===== 今日信号（gen_signals.py 导出的 ai_signals.json） =====
+const BAR_DOT = { '黄': 'bar-y', '绿': 'bar-g', '红': 'bar-r', '蓝': 'bar-b' };
+function sigTag(s) {
+  return `<span class="sig-tag"><span class="bar-dot ${BAR_DOT[s.bar] || ''}"></span>
+    <b>${esc(s.name)}</b> <span class="code">${s.code}</span> 第${s.yrun}根 ${s.close}</span>`;
+}
+fetch('ai_signals.json?_=' + Date.now()).then(r => r.ok ? r.json() : null).then(sig => {
+  if (!sig) return;
+  const dataDate = sig.board.length ? sig.board[0].date : '';
+  const buyTags = sig.buy.map(s => sigTag(s)).join('');
+  const watchTags = sig.watch.map(s => sigTag(s)).join('');
+  const boardRows = sig.board.map(s => {
+    const stateTxt = s.state === 'buy' ? '<b class="pos">买点</b>'
+      : s.state === 'watch' ? '观察' : '';
+    return `<tr><td class="name">${esc(s.name)}<div class="code">${s.code}</div></td>
+      <td><span class="bar-dot ${BAR_DOT[s.bar] || ''}"></span>${s.bar}</td>
+      <td class="num">${s.yrun || '-'}</td><td class="num">${s.srun || '-'}</td>
+      <td class="num">${s.close}</td><td>${stateTxt}</td></tr>`;
+  }).join('');
+  document.getElementById('sigWrap').innerHTML = `
+    <div class="cat-title">今日信号（数据截至 ${esc(dataDate)}）</div>
+    <div class="cat-desc">口径：绿转黄起计数，柱不回落（可翻红）计到第 4 根即买点；第 1~3 根为观察。每日随数据更新自动刷新，仅为信号提示，不构成投资建议</div>
+    <div class="bt-card sig-alert"><h3>🔔 买点提醒（第 4 根 · 非绿）</h3>
+      <div style="padding:12px 14px">${buyTags || '<span class="cat-desc">今日无买点信号</span>'}</div>
+    </div>
+    <div class="bt-card"><h3>👀 观察名单（第 1~3 根，柱未回落）</h3>
+      <div style="padding:12px 14px">${watchTags || '<span class="cat-desc">今日无观察信号</span>'}</div>
+    </div>
+    <div class="bt-card"><h3>全池柱状态</h3>
+      <div class="bt-table-wrap" style="max-height:320px"><table>
+        <tr><th>股票</th><th>当根柱</th><th class="num">放宽计数</th><th class="num">严格黄柱</th><th class="num">收盘</th><th>状态</th></tr>
+        ${boardRows}</table></div>
+    </div>`;
+}).catch(() => {});
 
 // ===== 黄柱买入回测结果（ai_yellow_bar.py 导出的 ai_backtest.json） =====
 function pct(x, digits = 1) { return x == null ? '-' : (x * 100).toFixed(digits) + '%'; }
@@ -351,6 +403,44 @@ fetch('ai_backtest.json?_=' + Date.now()).then(r => r.ok ? r.json() : null).then
     `<tr><td class="name">${esc(s.name)}<div class="code">${s.code}</div></td>
      <td class="num">${s.trades}</td><td class="num">${pct(s.win)}</td>${signed(s.avg)}
      <td class="num">${s.pl == null ? '-' : s.pl.toFixed(2)}</td></tr>`).join('');
+  let redHtml = '';
+  if (bt.red) {
+    const rb = bt.red.best;
+    const scanRows = bt.red.tp_scan.map(s =>
+      `<tr><td>${esc(s.sell)}</td><td class="num">${s.trades}</td><td class="num">${pct(s.win)}</td>
+       ${signed(s.avg)}<td class="num">${s.pl == null ? '-' : s.pl.toFixed(2)}</td>
+       <td class="num"><b>${s.pf == null ? '-' : s.pf.toFixed(2)}</b></td></tr>`).join('');
+    const redTopRows = bt.red.top.map((r, i) =>
+      `<tr><td>${i + 1}</td><td>第${r.n}根红柱</td><td>${esc(r.filter)}</td><td>${esc(r.sell)}</td>
+       <td class="num">${r.trades}</td><td class="num">${pct(r.win)}</td>${signed(r.avg)}
+       <td class="num">${r.pl == null ? '-' : r.pl.toFixed(2)}</td>
+       <td class="num"><b>${r.pf == null ? '-' : r.pf.toFixed(2)}</b></td></tr>`).join('');
+    redHtml = `
+    <div class="cat-title">红柱买入回测：第 2 根红柱买 · 止盈多少卖 / 蓝柱卖（同区间）</div>
+    <div class="cat-desc">红柱 = MACD 柱零上放大（一段连续红柱中的第 N 根收盘买入）；蓝柱 = 红柱缩头。先给出第 2 根红柱无过滤买入的卖出规则对比，再做全网格搜索</div>
+    <div class="bt-card"><h3>第 2 根红柱买入（无过滤）· 卖出规则对比</h3>
+      <div class="bt-table-wrap"><table>
+        <tr><th>卖出规则</th><th class="num">交易数</th><th class="num">胜率</th><th class="num">平均盈亏</th><th class="num">盈亏比</th><th class="num">收益因子</th></tr>
+        ${scanRows}</table></div>
+    </div>
+    <div class="bt-card"><h3>红柱最优买卖条件（全网格）</h3>
+      <div class="bt-best">
+        <div class="bt-cond">第 <b>${rb.n}</b> 根红柱买入（${esc(rb.filter)}）→ <b>${esc(rb.sell)}</b>卖出</div>
+        <div class="bt-pills">
+          <span class="bt-pill">胜率 <b>${pct(rb.win)}</b></span>
+          <span class="bt-pill">平均单笔 <b class="${rb.avg > 0 ? 'pos' : 'neg'}">${pct(rb.avg, 2)}</b></span>
+          <span class="bt-pill">盈亏比 <b>${rb.pl == null ? '-' : rb.pl.toFixed(2)}</b></span>
+          <span class="bt-pill">收益因子 <b>${rb.pf == null ? '-' : rb.pf.toFixed(2)}</b></span>
+          <span class="bt-pill">交易数 <b>${rb.trades}</b></span>
+        </div>
+      </div>
+    </div>
+    <div class="bt-card"><h3>红柱条件排行榜 Top 10（按收益因子）</h3>
+      <div class="bt-table-wrap"><table>
+        <tr><th>#</th><th>买入</th><th>过滤</th><th>卖出</th><th class="num">交易数</th><th class="num">胜率</th><th class="num">平均盈亏</th><th class="num">盈亏比</th><th class="num">收益因子</th></tr>
+        ${redTopRows}</table></div>
+    </div>`;
+  }
   document.getElementById('btWrap').innerHTML = `
     <div class="cat-title">黄柱买入回测（${esc(bt.since)} ~ ${esc(bt.updated)}）</div>
     <div class="cat-desc">MACD 柱零下缩头为黄柱；第 N 根黄柱收盘买入。共 ${bt.pool} 只 · 200 组条件网格搜索 · 未计手续费滑点，仅供研究参考</div>
@@ -375,7 +465,7 @@ fetch('ai_backtest.json?_=' + Date.now()).then(r => r.ok ? r.json() : null).then
       <div class="bt-table-wrap"><table>
         <tr><th>股票</th><th class="num">交易数</th><th class="num">胜率</th><th class="num">平均盈亏</th><th class="num">盈亏比</th></tr>
         ${stockRows}</table></div>
-    </div>`;
+    </div>${redHtml}`;
 }).catch(() => {});
 </script>
 </body>
