@@ -2,7 +2,7 @@
 """ETF 轮动网站服务器：静态文件 + /api/update 触发行情数据更新。
 
 打开网页时前端会请求 /api/update，后台依次执行 fetch_data.py、export_json.py、gen_signals.py 和 ai_yellow_bar.py；
-30 分钟内重复请求自动跳过，避免频繁抓取。
+10 分钟内重复请求自动跳过，避免频繁抓取。
 """
 import json
 import random
@@ -19,7 +19,7 @@ SITE_DIR = ROOT / "site"
 PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 LOG_FILE = ROOT / "update.log"
 PORT = 8001
-THROTTLE_SEC = 30 * 60  # 30 分钟内只更新一次
+THROTTLE_SEC = 10 * 60  # 10 分钟内只更新一次
 
 _update_lock = threading.Lock()
 _last_run = 0.0
@@ -49,6 +49,8 @@ def run_update():
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 timeout=600,
+                # 服务器经计划任务无窗口运行，子进程是控制台程序会弹黑窗，此处禁止创建窗口
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             if proc.returncode != 0:
                 return False, f"{script} 执行失败（退出码 {proc.returncode}），详见 update.log"

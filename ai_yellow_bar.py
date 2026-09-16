@@ -55,13 +55,10 @@ def market_of(code: str) -> int:
 
 
 def fetch_daily(api, code: str) -> pd.DataFrame:
-    """pytdx 日线，带本地缓存（当日已抓过则直接用）"""
+    """pytdx 日线，带本地缓存（5 分钟内抓过则直接用，保证盘中 10 分钟轮询能拿到当日新数据）"""
     path = os.path.join(CACHE, '%s.csv' % code)
-    today = pd.Timestamp.now().date()
-    if os.path.exists(path):
-        df = pd.read_csv(path, parse_dates=['date'], index_col='date')
-        if df.index[-1].date() >= today - pd.Timedelta(days=3):
-            return df
+    if os.path.exists(path) and time.time() - os.path.getmtime(path) < 300:
+        return pd.read_csv(path, parse_dates=['date'], index_col='date')
     rows = fd._fetch_bars(api, code, 8000, market_of(code))
     if not rows:
         raise RuntimeError('%s 无数据' % code)
