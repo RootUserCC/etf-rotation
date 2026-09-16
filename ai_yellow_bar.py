@@ -38,12 +38,12 @@ SIGNAL_START = pd.Timestamp('2026-01-01')
 
 
 def load_stock_list():
-    """从 site/ai.html 的 DATA 数组解析股票池（6 位代码；港股 5 位代码自动排除）"""
+    """从 site/ai.html 的 DATA 数组解析股票池（6 位代码；港股 5 位代码、ETF、科创板自动排除）"""
     text = open(os.path.join(ROOT, 'site', 'ai.html'), encoding='utf-8').read()
     stocks = re.findall(r"\['(\d{6})', '([^']+)', '([^']*)'\]", text)
     seen, out = set(), []
     for code, name, note in stocks:
-        if code not in seen:
+        if code not in seen and 'ETF' not in name and not code.startswith('688'):
             seen.add(code)
             out.append((code, name, note))
     return out
@@ -123,6 +123,7 @@ RED_SELL_RULES = {
     '止盈30%': dict(tp=0.30, sl=None, maxd=60, blue=False, ma20=False),
     '止盈10%或蓝柱': dict(tp=0.10, sl=None, maxd=120, blue=True, ma20=False),
     '止盈20%或蓝柱': dict(tp=0.20, sl=None, maxd=120, blue=True, ma20=False),
+    '止盈8%止损8%': dict(tp=0.08, sl=0.08, maxd=60, blue=False, ma20=False),
 }
 
 

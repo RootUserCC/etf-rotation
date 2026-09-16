@@ -102,6 +102,10 @@ export_json.py       # 导出网站数据 site/data.json
 run_backtest.py      # 单次回测入口
 fetch_avg_compute.py # 备选：从全市场个股自行合成平均股价
 optimize.py          # 方案C 参数寻优（网格搜索 MACD 参数/信号类型/买卖阈值）
+compare_improve.py   # 结构改进对比：空仓第三状态(MA过滤)/尾盘成交 vs 现行T+1开盘（结果见 result_improve.txt）
+compare_dwt.py       # 做T叠加回测：轮动底仓 + 1/3与1/2仓位VWAP偏离做T（1分钟线，结果见 result_dwt.txt）
+trades_ledger.py     # 方案C理想执行台账：2019年起全部持仓段明细+统计规律（结果见 result_trades.txt）
+optimal_path.py      # 上帝视角最优路径：2026年起两腿每日二选一DP全局最优（结果见 result_optimal.txt）
 site/index.html      # 监控页面（ECharts 已本地化，可离线）
 server.py            # 网站服务器（静态文件 + /api/update 触发数据更新）
 run_server.pyw       # server.py 的无窗口启动引导（供计划任务/启动.bat 调用）

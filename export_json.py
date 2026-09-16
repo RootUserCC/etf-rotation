@@ -21,7 +21,7 @@ if sys.platform == 'win32' and not getattr(sys.stdout, '_utf8_wrapped', False):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stdout._utf8_wrapped = True
 
-from backtest import run_backtest, calc_signals
+from backtest import run_backtest, calc_signals, annualized, max_drawdown
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE, 'data')
@@ -128,24 +128,41 @@ def main():
     catk_raw = etf_atk_raw.loc[idx, 'close']
     # 真实成交口径账户净值：普通日按持仓收盘→收盘；换仓日拆为
     # 旧仓隔夜段(昨收→今开) + 新仓日内段(今开→今收)，扣双边万1
-    switch_at = {pos_of[d]: a for d, a, p in res['trades']}
-    wealth = [1.0]
-    held_div = True
-    for i in range(1, len(idx)):
-        a = switch_at.get(i)
-        if a is None:
-            c = cdiv if held_div else catk
-            w = wealth[-1] * float(c.iloc[i]) / float(c.iloc[i - 1])
-        elif a.startswith('买入'):
-            w = (wealth[-1] * float(odiv.iloc[i]) / float(cdiv.iloc[i - 1])
-                 * float(catk.iloc[i]) / float(oatk.iloc[i]) * (1 - 2 * 0.0001))
-            held_div = False
-        else:
-            w = (wealth[-1] * float(oatk.iloc[i]) / float(catk.iloc[i - 1])
-                 * float(cdiv.iloc[i]) / float(odiv.iloc[i]) * (1 - 2 * 0.0001))
-            held_div = True
-        wealth.append(w)
-    wealth = pd.Series(wealth, index=idx)
+    def wealth_from_trades(trades_list):
+        switch_at = {pos_of[d]: a for d, a, p in trades_list}
+        w = [1.0]
+        held_div = True
+        for i in range(1, len(idx)):
+            a = switch_at.get(i)
+            if a is None:
+                c = cdiv if held_div else catk
+                wi = w[-1] * float(c.iloc[i]) / float(c.iloc[i - 1])
+            elif a.startswith('买入'):
+                wi = (w[-1] * float(odiv.iloc[i]) / float(cdiv.iloc[i - 1])
+                      * float(catk.iloc[i]) / float(oatk.iloc[i]) * (1 - 2 * 0.0001))
+                held_div = False
+            else:
+                wi = (w[-1] * float(oatk.iloc[i]) / float(catk.iloc[i - 1])
+                      * float(cdiv.iloc[i]) / float(odiv.iloc[i]) * (1 - 2 * 0.0001))
+                held_div = True
+            w.append(wi)
+        return pd.Series(w, index=idx)
+
+    wealth = wealth_from_trades(res['trades'])
+
+    # 对照口径：买入确认（拐点次日 DIF 仍上行才确认，信号日顺延1天），其余与现行完全一致
+    res_alt = run_backtest(avg, etf_atk, etfdiv, fee=0.0001, sell_anywhere=True,
+                           fast=17, slow=34, sig_n=9, buy_confirm=True,
+                           label='C-alt', verbose=False)
+    if (0 < i_sw < len(res['idx'])
+            and res_alt['hold1000'].iloc[i_sw] and res_alt['hold1000'].iloc[i_sw - 1]):
+        raise SystemExit('对照口径在切换日 %s 跨界持有进攻仓，需先处理持仓段拆分' % SWITCH_ATK.date())
+    wealth_alt = wealth_from_trades(res_alt['trades'])
+    alt_stats = {
+        'annual': round(annualized(wealth_alt), 4),
+        'maxdd': round(max_drawdown(wealth_alt), 4),
+        'trades': len(res_alt['trades']),
+    }
     # 区间收益按实盘口径：上次换仓开盘价建仓 → 本次换仓开盘价了结，扣双边万1
     # 累计收益取换仓成交时刻（当日开盘）的账户价值 = 区间收益逐笔连乘，两行严格对账
     entry = float(etfdiv.loc[idx[0], 'close'])   # 初始持有红利低波，视作回测首日收盘建仓
@@ -226,6 +243,48 @@ def main():
         'open': True,
     })
 
+    # 防守池双择优（512890 红利低波 / 159201 自由现金流）：
+    # 切入防守时比较近20日涨幅选高者，防守期间不换仓；下次切入重新比较
+    defense_pick = None
+    try:
+        d201 = load('etf_159201_hfq.csv')
+        mom890 = etfdiv['close'] / etfdiv['close'].shift(20) - 1
+        mom201 = d201['close'] / d201['close'].shift(20) - 1
+
+        def pick_at(day):
+            """某日收盘后按近20日涨幅选防守标的（159201 未上市/数据缺失时取 512890）"""
+            m1 = mom890.get(day, float('nan'))
+            m2 = mom201.get(day, float('nan'))
+            if pd.isna(m2):
+                return '512890'
+            if pd.isna(m1):
+                return '159201'
+            return '512890' if m1 >= m2 else '159201'
+
+        # 双择优规则下当前防守仓应持有的标的（最近一次切入防守时的选择）
+        holding_def = None
+        if legs and legs[-1]['asset'] == 'div' and legs[-1]['open']:
+            for d, a, p in reversed(res['trades']):
+                if a.startswith('卖出'):                # 卖出进攻/买入防守
+                    holding_def = pick_at(idx[max(pos_of[d] - 1, 0)])
+                    break
+        # 若今日触发卖出信号应买入的防守标的（按最新公共交易日动量，159201 数据可能偏旧）
+        mom_day = min(etfdiv.index[-1], d201.index[-1])
+
+        def _r(x):
+            return None if pd.isna(x) else round(float(x), 4)
+
+        defense_pick = {
+            'mom_date': mom_day.strftime('%Y-%m-%d'),
+            'mom_890': _r(mom890.get(mom_day, float('nan'))),
+            'mom_201': _r(mom201.get(mom_day, float('nan'))),
+            'in_defense': holding_def is not None,
+            'holding_def': holding_def,
+            'next_pick': pick_at(mom_day),
+        }
+    except FileNotFoundError:
+        print('  (无 etf_159201_hfq.csv，跳过防守择优输出)')
+
     out = {
         'dates': dates,
         'avg': series(avg),
@@ -248,6 +307,9 @@ def main():
         'legs': legs,
         'hold_spans': spans,
         'nav_strat': [round(float(v), 4) for v in wealth.values],   # 真实成交口径净值
+        'nav_alt': [round(float(v), 4) for v in wealth_alt.values],  # 对照：买入确认(信号顺延1天)
+        'alt_stats': alt_stats,                   # 对照口径统计：年化/最大回撤/换仓次数
+        'defense_pick': defense_pick,             # 防守池双择优（512890/159201，近20日动量）
         'updated': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'),
     }
     path = os.path.join(SITE_DIR, 'data.json')

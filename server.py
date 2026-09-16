@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """ETF 轮动网站服务器：静态文件 + /api/update 触发行情数据更新。
 
-打开网页时前端会请求 /api/update，后台依次执行 fetch_data.py 和 export_json.py；
+打开网页时前端会请求 /api/update，后台依次执行 fetch_data.py、export_json.py、gen_signals.py 和 ai_yellow_bar.py；
 30 分钟内重复请求自动跳过，避免频繁抓取。
 """
 import json
@@ -39,9 +39,9 @@ def practice_df():
 
 
 def run_update():
-    """依次执行 fetch_data.py 和 export_json.py，返回 (是否成功, 错误信息)。"""
+    """依次执行 fetch_data.py、export_json.py、gen_signals.py、ai_yellow_bar.py，返回 (是否成功, 错误信息)。"""
     with LOG_FILE.open("a", encoding="utf-8") as log:
-        for script in ("fetch_data.py", "export_json.py"):
+        for script in ("fetch_data.py", "export_json.py", "gen_signals.py", "ai_yellow_bar.py"):
             log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 运行 {script}\n")
             proc = subprocess.run(
                 [str(PYTHON), script],

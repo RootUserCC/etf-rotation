@@ -27,7 +27,8 @@ def ema(s: pd.Series, n: int) -> pd.Series:
 
 def calc_signals(close: pd.Series, sell_anywhere: bool = False,
                  fast: int = 12, slow: int = 26, sig_n: int = 9,
-                 bar_mode: bool = False, buy_anywhere: bool = False) -> pd.DataFrame:
+                 bar_mode: bool = False, buy_anywhere: bool = False,
+                 buy_confirm: bool = False) -> pd.DataFrame:
     """按通达信 MACD 公式计算 DIF/DEA/MACDVAL 与拐点信号
     sell_anywhere=False: 原版，卖出要求 DIF>0
     sell_anywhere=True : 对称版，DIF 转降即切红利（零下也卖）
@@ -35,6 +36,8 @@ def calc_signals(close: pd.Series, sell_anywhere: bool = False,
     bar_mode=True    : 四色柱模式（方案D）——
         卖出：MACD柱由红变蓝（零上红柱首次缩头）
         买入：DIF 零下拐头向上（同原买点）或 MACD柱由蓝变红（零上红柱重新放大）
+    buy_confirm=True : 买入确认——拐点次日 DIF 仍上行才确认买入
+        （信号日顺延1天，T拐头→T+1确认→T+2开盘买入），仅影响买入信号
     """
     dif = ema(close, fast) - ema(close, slow)
     dea = ema(dif, sig_n)
@@ -58,6 +61,8 @@ def calc_signals(close: pd.Series, sell_anywhere: bool = False,
     else:
         df['buy_sig'] = dif_up & (dif < 0)                       # 低位买入
         df['sell_sig'] = dif_down if sell_anywhere else (dif_down & (dif > 0))
+    if buy_confirm:
+        df['buy_sig'] = df['buy_sig'].shift(1).fillna(False) & (dif.diff() > 0)
     return df
 
 
@@ -78,6 +83,7 @@ def run_backtest(avg: pd.DataFrame, etf1000: pd.DataFrame, etfdiv: pd.DataFrame,
                  label: str = '轮动策略', start_date=None,
                  fast: int = 12, slow: int = 26, sig_n: int = 9,
                  bar_mode: bool = False, buy_anywhere: bool = False,
+                 buy_confirm: bool = False,
                  signals: pd.DataFrame = None,
                  verbose: bool = True) -> dict:
     """
@@ -87,6 +93,7 @@ def run_backtest(avg: pd.DataFrame, etf1000: pd.DataFrame, etfdiv: pd.DataFrame,
     fast/slow/sig_n: MACD 参数，默认 12/26/9（方案B），方案C 用 17/34/9
     bar_mode: True 时改用四色柱信号（方案D，见 calc_signals）；
               配合 buy_anywhere=True 即方案E（DIF拐头即买、MACD变蓝即卖）
+    buy_confirm: True 时买入需次日确认（信号日顺延1天，见 calc_signals）
     signals: 外部信号 DataFrame（index=日期, 含 buy_sig/sell_sig 列），
              传入后忽略 fast/slow/sig_n/bar_mode，用于 KDJ 等自定义信号对比
     返回结果字典：nav/trades/sig/hold1000/idx
@@ -96,7 +103,7 @@ def run_backtest(avg: pd.DataFrame, etf1000: pd.DataFrame, etfdiv: pd.DataFrame,
     else:
         sig = calc_signals(avg['close'], sell_anywhere=sell_anywhere,
                            fast=fast, slow=slow, sig_n=sig_n, bar_mode=bar_mode,
-                           buy_anywhere=buy_anywhere)
+                           buy_anywhere=buy_anywhere, buy_confirm=buy_confirm)
 
     # 对齐三只标的的交易日
     idx = etf1000.index.intersection(etfdiv.index).intersection(sig.index)
