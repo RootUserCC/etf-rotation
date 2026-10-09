@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """ETF 轮动网站服务器：静态文件 + /api/update 触发行情数据更新。
 
-打开网页时前端会请求 /api/update，后台依次执行 fetch_data.py、export_json.py、gen_signals.py 和 ai_yellow_bar.py；
-10 分钟内重复请求自动跳过，避免频繁抓取。
+打开网页时前端会请求 /api/update，后台依次执行 fetch_data.py、export_json.py；
+10 分钟内重复请求自动跳过，避免频繁抓取。服务器启动时若数据不是最新会自动补跑一次，
+作为计划任务因关机/睡眠错过时的兜底。
 """
 import json
 import random
@@ -39,9 +40,9 @@ def practice_df():
 
 
 def run_update():
-    """依次执行 fetch_data.py、export_json.py、gen_signals.py、ai_yellow_bar.py，返回 (是否成功, 错误信息)。"""
+    """依次执行 fetch_data.py、export_json.py，返回 (是否成功, 错误信息)。"""
     with LOG_FILE.open("a", encoding="utf-8") as log:
-        for script in ("fetch_data.py", "export_json.py", "gen_signals.py", "ai_yellow_bar.py"):
+        for script in ("fetch_data.py", "export_json.py"):
             log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 运行 {script}\n")
             proc = subprocess.run(
                 [str(PYTHON), script],
@@ -170,6 +171,12 @@ class Handler(SimpleHTTPRequestHandler):
                 _running = False
         self._send_json(result)
 
+    def end_headers(self):
+        # 页面和 JSON 每天都会更新；不发缓存头时浏览器按 Last-Modified 的 10%
+        # 时长做启发式缓存，会直接拿旧文件不重校验，表现为“网站不更新”
+        self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
     def _send_json(self, obj):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
@@ -182,6 +189,34 @@ class Handler(SimpleHTTPRequestHandler):
         pass
 
 
+def startup_update_if_stale():
+    """启动兜底：data.json 数据日期早于今天（周末回退到周五判断）时后台补跑一次更新。
+    计划任务在关机/睡眠期间会错过，这里是双保险。"""
+    global _last_run, _running
+    try:
+        last = json.loads((SITE_DIR / "data.json").read_text(encoding="utf-8"))["dates"][-1]
+    except Exception:  # noqa: BLE001 - 读取失败一律视为需要更新
+        last = ""
+    import datetime as dt
+    d = dt.date.today()
+    if d.weekday() >= 5:
+        d -= dt.timedelta(days=d.weekday() - 4)
+    if last and last >= d.isoformat():
+        return
+    with _update_lock:
+        if _running:
+            return
+        _running = True
+    try:
+        run_update()
+    except Exception:  # noqa: BLE001 - 兜底逻辑不影响服务器启动
+        pass
+    finally:
+        with _update_lock:
+            _last_run = time.time()
+            _running = False
+
+
 if __name__ == "__main__":
     # 绑定 0.0.0.0：本机用 127.0.0.1 访问，手机等局域网设备用本机局域网 IP 访问
     import socket
@@ -190,4 +225,5 @@ if __name__ == "__main__":
     except OSError:
         lan_ip = "?"
     print(f"服务已启动: http://127.0.0.1:{PORT}/  (局域网: http://{lan_ip}:{PORT}/)")
+    threading.Thread(target=startup_update_if_stale, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

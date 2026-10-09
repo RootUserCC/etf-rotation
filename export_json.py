@@ -21,7 +21,7 @@ if sys.platform == 'win32' and not getattr(sys.stdout, '_utf8_wrapped', False):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stdout._utf8_wrapped = True
 
-from backtest import run_backtest, calc_signals, annualized, max_drawdown
+from backtest import run_backtest, calc_signals
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE, 'data')
@@ -53,9 +53,6 @@ def main():
     etfdiv_raw = load('etf_512890.csv')
     etf2000e = load('etf_159552_hfq.csv')      # 后复权：拼接后进攻仓（2024-06-28 起）
     etf2000e_raw = load('etf_159552.csv')      # 不复权：价格显示
-    etf300 = load('etf_510300_hfq.csv')        # 后复权：沪深300ETF 超额基准
-    index_sh = load('index_000001.csv')        # 价格指数：上证指数超额基准
-    index_cyb = load('index_399006.csv')       # 价格指数：创业板指超额基准
 
     # 进攻腿拼接：切换日前整段用 512100，切换日起整段用 159552（信号不变，仍由 880003 决定）
     etf_atk = pd.concat([etf1000[etf1000.index < SWITCH_ATK],
@@ -90,12 +87,6 @@ def main():
         hi = df.loc[idx, 'high']
         return [[round(float(a), 3), round(float(b), 3), round(float(l), 3), round(float(h), 3)]
                 for a, b, l, h in zip(o.values, c.values, lo.values, hi.values)]
-
-    def series_k_sparse(df):
-        """K线序列（稀疏版）：标的历史不足全窗口时缺失日期补 None"""
-        cols = df[['open', 'close', 'low', 'high']]
-        return [[round(float(v), 3) for v in cols.loc[d].values] if d in cols.index
-                else None for d in idx]
 
     def series_sparse(df):
         """标的历史不足全窗口时（如 159552 自 2024-06-28 起），缺失日期补 None"""
@@ -150,19 +141,6 @@ def main():
 
     wealth = wealth_from_trades(res['trades'])
 
-    # 对照口径：买入确认（拐点次日 DIF 仍上行才确认，信号日顺延1天），其余与现行完全一致
-    res_alt = run_backtest(avg, etf_atk, etfdiv, fee=0.0001, sell_anywhere=True,
-                           fast=17, slow=34, sig_n=9, buy_confirm=True,
-                           label='C-alt', verbose=False)
-    if (0 < i_sw < len(res['idx'])
-            and res_alt['hold1000'].iloc[i_sw] and res_alt['hold1000'].iloc[i_sw - 1]):
-        raise SystemExit('对照口径在切换日 %s 跨界持有进攻仓，需先处理持仓段拆分' % SWITCH_ATK.date())
-    wealth_alt = wealth_from_trades(res_alt['trades'])
-    alt_stats = {
-        'annual': round(annualized(wealth_alt), 4),
-        'maxdd': round(max_drawdown(wealth_alt), 4),
-        'trades': len(res_alt['trades']),
-    }
     # 区间收益按实盘口径：上次换仓开盘价建仓 → 本次换仓开盘价了结，扣双边万1
     # 累计收益取换仓成交时刻（当日开盘）的账户价值 = 区间收益逐笔连乘，两行严格对账
     entry = float(etfdiv.loc[idx[0], 'close'])   # 初始持有红利低波，视作回测首日收盘建仓
@@ -289,17 +267,12 @@ def main():
         'dates': dates,
         'avg': series(avg),
         'avg_k': series_k(avg),                   # 平均股价 K线（开/收/低/高）
-        'etfdiv_k': series_k(etfdiv_raw),         # 红利低波ETF K线（不复权真实价格）
-        'etf2000e_k': series_k_sparse(etf2000e_raw),  # 中证2000增强ETF K线（不复权，2024-06-28 前为 null）
         'etf1000': series(etf1000_raw),
         'etfdiv': series(etfdiv_raw),
         'etf1000_hfq': series(etf1000),           # 后复权：净值对比基准（超额收益沿用512100口径）
         'etfdiv_hfq': series(etfdiv),
         'etf2000e': series_sparse(etf2000e_raw),  # 159552 不复权（2024-06-28 前为 null）
         'etf2000e_hfq': series_sparse(etf2000e),  # 159552 后复权（同上）
-        'etf300_hfq': series(etf300),             # 沪深300ETF 后复权：超额基准
-        'index_sh': series(index_sh),             # 上证指数（价格指数）：超额基准
-        'index_cyb': series(index_cyb),           # 创业板指（价格指数）：超额基准
         'switch_atk': SWITCH_ATK.strftime('%Y-%m-%d'),   # 进攻仓切换日（512100→159552）
         'dif': [round(float(v), 4) for v in sig['dif'].values],
         'dea': [round(float(v), 4) for v in sig['dea'].values],
@@ -307,8 +280,6 @@ def main():
         'legs': legs,
         'hold_spans': spans,
         'nav_strat': [round(float(v), 4) for v in wealth.values],   # 真实成交口径净值
-        'nav_alt': [round(float(v), 4) for v in wealth_alt.values],  # 对照：买入确认(信号顺延1天)
-        'alt_stats': alt_stats,                   # 对照口径统计：年化/最大回撤/换仓次数
         'defense_pick': defense_pick,             # 防守池双择优（512890/159201，近20日动量）
         'updated': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'),
     }

@@ -256,6 +256,18 @@ def main():
     df2000e_raw.to_csv(os.path.join(DATA_DIR, 'etf_159552.csv'))
     print('  %d 行  %s ~ %s' % (len(df2000e_raw), df2000e_raw.index[0].date(), df2000e_raw.index[-1].date()))
 
+    # 进攻池候选：588220 科创100ETF[沪] / 515880 通信ETF[沪] / 159915 创业板ETF[深]（后复权）
+    for code, name, mkt in [('588220', '科创100ETF', 1),
+                            ('515880', '通信ETF', 1),
+                            ('159915', '创业板ETF', 0)]:
+        print('--- 拉取 %s %s(后复权) ---' % (code, name))
+        try:
+            dfx = _retry(lambda: fetch_etf_hfq(code, market=mkt))
+            dfx.to_csv(os.path.join(DATA_DIR, 'etf_%s_hfq.csv' % code))
+            print('  %d 行  %s ~ %s' % (len(dfx), dfx.index[0].date(), dfx.index[-1].date()))
+        except Exception as e:
+            print('  [警告] %s 拉取失败(%s)，保留旧 CSV' % (code, repr(e)[:80]))
+
     # 880003 平均股价：通达信板块指数，尽力而为，失败保留旧数据不致命
     print('--- 拉取 880003 平均股价(尽力而为) ---')
     dfavg = fetch_avg_price_hq()
