@@ -4,3 +4,4 @@ __pycache__/
 site_check*.png
 data/stocks_cache.pkl
 *.log
+.gh-pages/
