@@ -55,6 +55,19 @@ def run_update():
             )
             if proc.returncode != 0:
                 return False, f"{script} 执行失败（退出码 {proc.returncode}），详见 update.log"
+        # 数据导出成功后同步发布 gh-pages（GitHub Pages 网站）；发布失败不影响本地更新结果
+        try:
+            log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 运行 publish_site.bat\n")
+            subprocess.run(
+                ["cmd.exe", "/c", "publish_site.bat"],
+                cwd=ROOT,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                timeout=180,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except Exception:  # noqa: BLE001 - 发布失败不阻断主流程
+            log.write("publish_site.bat 调用异常（忽略）\n")
     return True, ""
 
 
