@@ -529,7 +529,12 @@ document.getElementById('refreshBtn').addEventListener('click', () => {
       console.error('数据更新失败: ' + (res.error || '未知错误'));
     }
   }).catch(e => {
-    updated.textContent = '更新接口不可用';
+    // 静态托管（GitHub Pages）无更新接口：退化为直接重新加载 data.json
+    loadData().then(() => {
+      updated.textContent += '（静态站每日自动同步）';
+    }).catch(() => {
+      updated.textContent = '更新接口不可用';
+    });
     console.error(e);
   }).finally(() => {
       refreshing = false;
