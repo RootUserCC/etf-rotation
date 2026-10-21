@@ -582,6 +582,9 @@ if (!STATIC_HOST) {
     if (res.ok && !res.skipped) loadData();
     if (!res.ok) console.error('数据更新失败: ' + (res.error || '未知错误'));
   }).catch(e => console.error('更新接口不可用: ' + e));
+} else {
+  // 静态站没有更新接口：每 5 分钟自动重载一次数据，后台发布后无需手动刷新
+  setInterval(() => { if (!document.hidden) loadData(); }, 5 * 60 * 1000);
 }
 
 // ===== 顶部状态摘要 =====
