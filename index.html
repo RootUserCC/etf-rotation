@@ -522,7 +522,9 @@ document.getElementById('refreshBtn').addEventListener('click', () => {
   const updated = document.getElementById('updated');
   btn.style.transform = 'rotate(180deg)';
   btn.style.opacity = '0.5';
+  let timer = null;
   const done = () => {
+    if (timer) clearInterval(timer);
     refreshing = false;
     btn.style.opacity = '';
     setTimeout(() => btn.style.transform = '', 500);
@@ -534,7 +536,12 @@ document.getElementById('refreshBtn').addEventListener('click', () => {
     }).finally(done);
     return;
   }
-  updated.textContent = '正在更新行情…';
+  const t0 = Date.now();
+  const tick = () => {
+    updated.textContent = `正在更新行情… ${Math.round((Date.now() - t0) / 1000)}s（约需 1-2 分钟）`;
+  };
+  tick();
+  timer = setInterval(tick, 1000);
   fetch('/api/update?force=1').then(r => r.json()).then(res => {
     if (res.ok) {
       loadData();
