@@ -512,6 +512,8 @@ document.getElementById('themeBtn').addEventListener('click', () => {
   root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
   if (lastData) { render(lastData); renderDaily(lastData); renderRisk(lastData); renderRolling(lastData); }
 });
+// GitHub Pages 等静态托管没有 /api/update，刷新只能重新加载已发布的数据
+const STATIC_HOST = location.hostname.endsWith('github.io');
 let refreshing = false;
 document.getElementById('refreshBtn').addEventListener('click', () => {
   if (refreshing) return;
@@ -520,6 +522,18 @@ document.getElementById('refreshBtn').addEventListener('click', () => {
   const updated = document.getElementById('updated');
   btn.style.transform = 'rotate(180deg)';
   btn.style.opacity = '0.5';
+  const done = () => {
+    refreshing = false;
+    btn.style.opacity = '';
+    setTimeout(() => btn.style.transform = '', 500);
+  };
+  if (STATIC_HOST) {
+    updated.textContent = '正在重新加载…';
+    loadData().then(() => {
+      if (lastData) updated.textContent = '数据更新: ' + lastData.updated + '（静态站每日 15:10 同步）';
+    }).finally(done);
+    return;
+  }
   updated.textContent = '正在更新行情…';
   fetch('/api/update?force=1').then(r => r.json()).then(res => {
     if (res.ok) {
@@ -529,18 +543,9 @@ document.getElementById('refreshBtn').addEventListener('click', () => {
       console.error('数据更新失败: ' + (res.error || '未知错误'));
     }
   }).catch(e => {
-    // 静态托管（GitHub Pages）无更新接口：退化为直接重新加载 data.json
-    loadData().then(() => {
-      updated.textContent += '（静态站每日自动同步）';
-    }).catch(() => {
-      updated.textContent = '更新接口不可用';
-    });
+    updated.textContent = '更新接口不可用';
     console.error(e);
-  }).finally(() => {
-      refreshing = false;
-      btn.style.opacity = '';
-      setTimeout(() => btn.style.transform = '', 500);
-    });
+  }).finally(done);
 });
 
 // ===== 数据加载 =====
@@ -571,11 +576,13 @@ function loadData() {
 
 loadData();
 
-// 打开页面时后台更新行情数据，完成后自动刷新显示
-fetch('/api/update').then(r => r.json()).then(res => {
-  if (res.ok && !res.skipped) loadData();
-  if (!res.ok) console.error('数据更新失败: ' + (res.error || '未知错误'));
-}).catch(e => console.error('更新接口不可用: ' + e));
+// 打开页面时后台更新行情数据，完成后自动刷新显示（静态托管没有该接口）
+if (!STATIC_HOST) {
+  fetch('/api/update').then(r => r.json()).then(res => {
+    if (res.ok && !res.skipped) loadData();
+    if (!res.ok) console.error('数据更新失败: ' + (res.error || '未知错误'));
+  }).catch(e => console.error('更新接口不可用: ' + e));
+}
 
 // ===== 顶部状态摘要 =====
 function renderStatus(data) {
