@@ -595,6 +595,7 @@ function loadData() {
     renderRolling(data);
     renderLegStats(data);
     renderTable(data);
+    if (lastLive) patchLive(lastLive);   // loadData 会重置信号横幅，这里补回盘中预览
   }).catch(e => {
     document.getElementById('err').style.display = 'block';
     console.error(e.stack || e);
@@ -617,10 +618,11 @@ if (!STATIC_HOST) {
 }
 
 // ===== 盘中实时（仅本地/局域网服务；静态站无此能力）=====
+let lastLive = null;
 function startLive() {
   const poll = () => {
     fetch('live.json?_=' + Date.now()).then(r => r.ok ? r.json() : null).then(d => {
-      if (d) patchLive(d);
+      if (d) { lastLive = d; patchLive(d); }
     }).catch(() => {});
   };
   poll();
