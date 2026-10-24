@@ -562,8 +562,9 @@ function watchUpdate(t0, el) {
           el.textContent = `正在更新行情… ${p.current ? '拉取 ' + p.current + ' ' : ''}`
             + `(${p.done || 0}/${p.total || 9}) ${secs}s`;
         } else {
-          clearInterval(iv);
           const last = st.last || {};
+          if (last.ok === undefined && Date.now() - t0 < 5000) return;  // 线程刚启动，再等一拍
+          clearInterval(iv);
           if (last.ok === false) el.textContent = '更新失败: ' + (last.error || '未知错误');
           resolve(last);
         }
@@ -635,6 +636,7 @@ function patchLive(d) {
   if (d.closed) {
     badge.textContent = '';
     badge.style.color = '';
+    if (banner.dataset.live) { banner.className = ''; banner.textContent = ''; delete banner.dataset.live; }
     return;
   }
   const a = d.avg || {};
@@ -655,6 +657,7 @@ function patchLive(d) {
       txt += `（DIF 翻转线 ${sig.turn_price}，还需 ${chg(sig.turn_pct)}）`;
     }
     banner.textContent = txt;
+    banner.dataset.live = '1';
   }
 }
 
@@ -1062,6 +1065,7 @@ function renderSignalAlert(data) {
   const el = document.getElementById('sigBanner');
   el.className = '';
   el.textContent = '';
+  delete el.dataset.live;
   const D = data.dates, N = D.length - 1, dif = data.dif;
   if (N < 2) return;
   const d2 = dif[N - 2], d1 = dif[N - 1], d0 = dif[N];
