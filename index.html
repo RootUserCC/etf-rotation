@@ -367,6 +367,7 @@
   <div class="topbar-right">
     <span class="status-pill" id="status">加载中…</span>
     <span class="updated" id="updated"></span>
+    <span class="updated" id="liveBadge"></span>
     <button class="btn" id="refreshBtn" title="刷新数据">⟳</button>
     <button class="btn" id="themeBtn" title="切换主题">🌓</button>
   </div>
@@ -537,25 +538,39 @@ document.getElementById('refreshBtn').addEventListener('click', () => {
     return;
   }
   const t0 = Date.now();
-  const tick = () => {
-    updated.textContent = `正在更新行情… ${Math.round((Date.now() - t0) / 1000)}s（约需 1-2 分钟）`;
-  };
-  tick();
-  timer = setInterval(tick, 1000);
+  updated.textContent = '正在更新行情…';
   fetch('/api/update?force=1').then(r => r.json()).then(res => {
-    if (res.ok) {
-      loadData();
-    } else {
-      updated.textContent = '更新失败: ' + (res.error || '未知错误');
-      console.error('数据更新失败: ' + (res.error || '未知错误'));
-    }
-  }).catch(e => {
+    if (!res.ok) throw new Error(res.error || '未知错误');
+    return watchUpdate(t0, updated);
+  }).then(() => loadData()).catch(e => {
     // 部署到静态托管但域名没被识别时，退化为重载已发布数据
     updated.textContent = '更新接口不可用，已重新加载';
     loadData();
     console.error(e);
   }).finally(done);
 });
+
+// 轮询 /api/status，实时显示逐标的进度；更新结束后返回结果
+function watchUpdate(t0, el) {
+  return new Promise(resolve => {
+    const iv = setInterval(() => {
+      fetch('/api/status?_=' + Date.now()).then(r => r.json()).then(st => {
+        const p = st.progress || {};
+        const secs = Math.round((Date.now() - t0) / 1000);
+        if (st.running) {
+          el.textContent = `正在更新行情… ${p.current ? '拉取 ' + p.current + ' ' : ''}`
+            + `(${p.done || 0}/${p.total || 9}) ${secs}s`;
+        } else {
+          clearInterval(iv);
+          const last = st.last || {};
+          if (last.ok === false) el.textContent = '更新失败: ' + (last.error || '未知错误');
+          resolve(last);
+        }
+      }).catch(() => {});
+    }, 500);
+    setTimeout(() => { clearInterval(iv); resolve({ ok: true }); }, 180000);
+  });
+}
 
 // ===== 数据加载 =====
 function loadData() {
@@ -564,7 +579,9 @@ function loadData() {
     return r.json();
   }).then(data => {
     lastData = data;
-    document.getElementById('updated').textContent = '数据更新: ' + data.updated;
+    document.getElementById('updated').textContent = '数据更新: ' + data.updated
+      + (data.avg_stale ? '（平均股价陈旧: ' + (data.avg_date || '?') + '）' : '');
+    if (data.avg_stale) document.getElementById('updated').style.color = '#e5484d';
     document.getElementById('err').style.display = 'none';
     renderStatus(data);
     renderKPIs(data);
@@ -588,12 +605,54 @@ loadData();
 // 打开页面时后台更新行情数据，完成后自动刷新显示（静态托管没有该接口）
 if (!STATIC_HOST) {
   fetch('/api/update').then(r => r.json()).then(res => {
-    if (res.ok && !res.skipped) loadData();
+    if (res.ok && res.started) watchUpdate(Date.now(), document.getElementById('updated')).then(loadData);
+    else if (res.ok && !res.skipped) loadData();
     if (!res.ok) console.error('数据更新失败: ' + (res.error || '未知错误'));
   }).catch(e => console.error('更新接口不可用: ' + e));
+  startLive();
 } else {
   // 静态站没有更新接口：每 5 分钟自动重载一次数据，后台发布后无需手动刷新
   setInterval(() => { if (!document.hidden) loadData(); }, 5 * 60 * 1000);
+}
+
+// ===== 盘中实时（仅本地/局域网服务；静态站无此能力）=====
+function startLive() {
+  const poll = () => {
+    fetch('live.json?_=' + Date.now()).then(r => r.ok ? r.json() : null).then(d => {
+      if (d) patchLive(d);
+    }).catch(() => {});
+  };
+  poll();
+  setInterval(() => { if (!document.hidden && !refreshing) poll(); }, 5000);
+}
+
+function patchLive(d) {
+  const badge = document.getElementById('liveBadge');
+  const banner = document.getElementById('sigBanner');
+  if (d.closed) {
+    badge.textContent = '';
+    badge.style.color = '';
+    return;
+  }
+  const a = d.avg || {};
+  const sig = d.sig || {};
+  const chg = (v) => v == null ? '' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  // 当前持仓标的：进攻仓取 159552（2024-06 后），防守仓取 512890
+  const legCode = sig.holding === 'atk' ? '159552' : '512890';
+  const leg = (d.etfs || []).find(e => e.code === legCode);
+  badge.innerHTML = `盘中 ${d.time} · 平均股价 `
+    + (a.value != null ? `<b>${a.value.toFixed(2)}</b> ` : '-- ')
+    + (a.chg_pct != null ? `<span style="color:${a.chg_pct >= 0 ? '#e5484d' : '#0f9d58'}">${chg(a.chg_pct)}</span>` : '')
+    + (leg ? ` · ${leg.name} <span style="color:${leg.chg_pct >= 0 ? '#e5484d' : '#0f9d58'}">${chg(leg.chg_pct)}</span>` : '');
+  badge.style.color = d.stale ? '#e5484d' : '';
+  if (sig.note) {
+    banner.className = sig.preview === 'buy' ? 'buy' : (sig.preview === 'sell' ? 'sell' : '');
+    let txt = '【盘中预览】' + sig.note;
+    if (sig.turn_price != null && sig.preview === 'none') {
+      txt += `（DIF 翻转线 ${sig.turn_price}，还需 ${chg(sig.turn_pct)}）`;
+    }
+    banner.textContent = txt;
+  }
 }
 
 // ===== 顶部状态摘要 =====
