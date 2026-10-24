@@ -186,6 +186,7 @@
   }
   #sigBanner.buy { display: block; background: color-mix(in srgb, var(--up) 12%, var(--card)); border-color: var(--up); color: var(--up); }
   #sigBanner.sell { display: block; background: color-mix(in srgb, var(--down) 12%, var(--card)); border-color: var(--down); color: var(--down); }
+  #sigBanner.info { display: block; background: var(--card); border-color: var(--border); color: var(--muted); font-weight: 500; }
 
   /* ---------- KPI 卡片 ---------- */
   .kpi-row { display: flex; gap: 14px; margin: 16px 20px; flex-wrap: wrap; }
@@ -646,7 +647,7 @@ function patchLive(d) {
     + (leg ? ` · ${leg.name} <span style="color:${leg.chg_pct >= 0 ? '#e5484d' : '#0f9d58'}">${chg(leg.chg_pct)}</span>` : '');
   badge.style.color = d.stale ? '#e5484d' : '';
   if (sig.note) {
-    banner.className = sig.preview === 'buy' ? 'buy' : (sig.preview === 'sell' ? 'sell' : '');
+    banner.className = sig.preview === 'buy' ? 'buy' : (sig.preview === 'sell' ? 'sell' : 'info');
     let txt = '【盘中预览】' + sig.note;
     if (sig.turn_price != null && sig.preview === 'none') {
       txt += `（DIF 翻转线 ${sig.turn_price}，还需 ${chg(sig.turn_pct)}）`;
