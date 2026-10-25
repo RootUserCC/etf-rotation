@@ -1459,6 +1459,7 @@ function renderTable(data) {
 function render(data) {
   const T = getTheme();
   if (!chart) chart = echarts.init(document.getElementById('chart'));
+  const narrow = window.innerWidth < 640;
   const D = data.dates;
 
   // 换仓点 markPoint（画在平均股价线上；买进攻 ⇄ 卖红利低波是同一操作，每处只标一次）
@@ -1610,14 +1611,17 @@ function render(data) {
     },
     legend: {
       data: ['平均股价(左轴)', '中证2000增强ETF(右轴)', '红利低波ETF(右轴)', 'DIF', 'DEA'],
-      top: 10,
-      textStyle: { color: T.muted, fontSize: 12 },
-      itemWidth: 16, itemHeight: 10
+      top: narrow ? 2 : 10,
+      type: narrow ? 'scroll' : 'plain',
+      itemWidth: narrow ? 10 : 16, itemHeight: narrow ? 8 : 10,
+      textStyle: { color: T.muted, fontSize: narrow ? 10 : 12 }
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     grid: [
-      { left: 62, right: 62, top: 44, height: '45%' },
-      { left: 62, right: 62, top: '53%', height: '45%' }
+      { left: narrow ? 44 : 62, right: narrow ? 44 : 62, top: narrow ? 34 : 44,
+        height: narrow ? '44%' : '45%' },
+      { left: narrow ? 44 : 62, right: narrow ? 44 : 62, top: narrow ? '54%' : '53%',
+        height: narrow ? '42%' : '45%' }
     ],
     xAxis: [
       { type: 'category', data: D, gridIndex: 0, boundaryGap: klineMode,
