@@ -678,6 +678,30 @@ function patchLive(d) {
     };
     patchLiveChart();
   }
+  applyLiveToStatus(d);
+}
+
+// 顶部摘要用实时值重画（只在副本上改，不动 lastData 的收盘序列）
+function applyLiveToStatus(d) {
+  if (!lastData || !d || d.closed) return;
+  const a = d.avg || {}, sig = d.sig || {};
+  const copy = Object.assign({}, lastData);
+  copy.avg = (lastData.avg || []).slice();
+  copy.dif = (lastData.dif || []).slice();
+  copy.dea = (lastData.dea || []).slice();
+  copy.legs = (lastData.legs || []).map(l => Object.assign({}, l));
+  const N = copy.avg.length - 1;
+  if (a.value != null) copy.avg[N] = a.value;
+  if (sig.dif != null) copy.dif[N] = sig.dif;
+  if (sig.dea != null) copy.dea[N] = sig.dea;
+  const last = copy.legs[copy.legs.length - 1];
+  if (last && last.open && last.buy_price) {
+    const code = last.asset === '1000' ? '159552' : '512890';
+    const e = (d.etfs || []).find(x => x.code === code)
+           || (d.etfs || []).find(x => x.code === '512100');
+    if (e) last.ret = e.price / last.buy_price - 1 - 0.0002;
+  }
+  renderStatus(copy);
 }
 
 // 盘中图表：把“今天”的临时点叠到图上（不改 lastData，KPI/回测序列保持收盘口径）
