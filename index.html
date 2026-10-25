@@ -912,7 +912,7 @@ function renderKPIs(data) {
     if (d < m) m = d;
   }
   setKPI('kpiMDD', (m * 100).toFixed(2) + '%', 'down',
-    'kpiMDDSub', `峰 ${data.dates[pDate]} · 最长水下 ${uwMax} 个交易日`);
+    'kpiMDDSub', `峰 ${data.dates[pDate]} · 水下 ${uwMax} 日`);
 
   // 年化（小字附 Calmar = 年化 / |最大回撤|）
   const annRet = Math.pow(finalNAV, 1 / years) - 1;
