@@ -1620,8 +1620,8 @@ function render(data) {
     grid: [
       { left: narrow ? 44 : 62, right: narrow ? 44 : 62, top: narrow ? 34 : 44,
         height: narrow ? '43%' : '44%' },
-      { left: narrow ? 44 : 62, right: narrow ? 44 : 62, top: narrow ? '54%' : '55%',
-        height: narrow ? '36%' : '39%' }
+      { left: narrow ? 44 : 62, right: narrow ? 44 : 62, top: narrow ? '55%' : '56%',
+        height: narrow ? '35%' : '38%' }
     ],
     xAxis: [
       { type: 'category', data: D, gridIndex: 0, boundaryGap: klineMode,
@@ -1638,7 +1638,7 @@ function render(data) {
         nameTextStyle: { color: T.muted },
         axisLabel: { color: T.axisText },
         splitLine: { show: false } },
-      { type: 'value', gridIndex: 1, name: narrow ? '' : 'DIF', scale: true,
+      { type: 'value', gridIndex: 1, name: '', scale: true,
         nameTextStyle: { color: T.muted },
         axisLabel: { color: T.axisText },
         splitLine: { lineStyle: { color: T.splitLine } } }
