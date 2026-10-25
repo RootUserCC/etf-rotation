@@ -304,6 +304,27 @@
     .tabs { margin-left: 12px; }
     .tabs button { padding: 7px 13px; }
   }
+  @media (max-width: 560px) {
+    .topbar { padding: 10px 12px; gap: 8px; }
+    .topbar-right { width: 100%; justify-content: flex-start; gap: 8px; }
+    .status-pill { white-space: normal; font-size: 12px; padding: 6px 10px; flex: 1 1 100%; }
+    .updated, .live-badge { font-size: 11px; }
+    .brand h1 { font-size: 15px; }
+    .brand .logo { width: 32px; height: 32px; }
+    .kpi-row { margin: 12px; gap: 10px; }
+    .kpi-card { flex: 1 1 calc(50% - 5px); min-width: 0; max-width: none; padding: 12px 14px; }
+    .kpi-card .value { font-size: 21px; }
+    .kpi-card .icon { width: 26px; height: 26px; font-size: 13px; }
+    .mini-row { margin: 0 12px; gap: 8px; }
+    .mini-card { flex: 1 1 calc(50% - 4px); min-width: 0; padding: 9px 12px; }
+    .tabs { margin: 12px 12px 0; width: calc(100% - 24px); justify-content: space-between; }
+    .tabs button { flex: 1; padding: 7px 0; }
+    .memo { margin: 8px 14px 0; font-size: 11px; }
+    .card { margin: 12px; }
+    #chart { height: 56vh; min-height: 320px; }
+    .card-head { padding: 12px 14px 8px; }
+    .card-head .hint { display: none; }
+  }
 
   /* ---------- 加载 ---------- */
   .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border2);
