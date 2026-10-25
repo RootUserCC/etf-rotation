@@ -263,6 +263,48 @@
     border-color: rgba(255, 255, 255, 0.25);
   }
 
+  /* ---------- 次要指标（紧凑条） ---------- */
+  .mini-row { display: flex; gap: 10px; margin: 0 20px 4px; flex-wrap: wrap; }
+  .mini-card {
+    flex: 1 1 150px; min-width: 140px;
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 14px;
+  }
+  .mini-card .label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+  .mini-card .value { font-size: 18px; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .mini-card .sub { font-size: 10px; color: var(--faint); margin-top: 2px; }
+  .mini-card input[type="number"], .mini-card input[type="date"] {
+    border: 1px solid var(--border2); border-radius: 6px; background: var(--card2);
+    color: var(--text); font-size: 10px; font-family: inherit; outline: none; padding: 1px 4px;
+  }
+  .mini-card input[type="number"] { width: 42px; text-align: center; }
+  .mini-card .date-row { margin-top: 4px; }
+  #kpiSig { font-size: 16px; white-space: nowrap; }
+  #kpiUpd { font-size: 13px; white-space: nowrap; }
+
+  /* ---------- 标签页 ---------- */
+  .tabs {
+    display: flex; gap: 4px; width: fit-content;
+    margin: 16px 20px 0; padding: 4px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  }
+  .tabs button {
+    border: none; background: transparent; color: var(--muted);
+    font: inherit; font-size: 13px; padding: 7px 18px; border-radius: 9px;
+    cursor: pointer; transition: all .15s;
+  }
+  .tabs button:hover { color: var(--text); }
+  .tabs button.on { background: var(--grad); color: #fff; font-weight: 600; }
+  .tab-panel[hidden] { display: none; }
+  .memo { margin: 10px 22px 0; font-size: 12px; color: var(--faint); }
+  .live-badge { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  @media (max-width: 760px) {
+    .hide-sm { display: none; }
+    .brand .sub { display: none; }
+    .tabs { margin-left: 12px; }
+    .tabs button { padding: 7px 13px; }
+  }
+
   /* ---------- 加载 ---------- */
   .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--border2);
              border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
@@ -376,8 +418,8 @@
   </div>
   <div class="topbar-right">
     <span class="status-pill" id="status">加载中…</span>
+    <span class="live-badge" id="liveBadge"></span>
     <span class="updated" id="updated"></span>
-    <span class="updated" id="liveBadge"></span>
     <button class="btn" id="refreshBtn" title="刷新数据">⟳</button>
     <button class="btn" id="themeBtn" title="切换主题">🌓</button>
   </div>
@@ -387,18 +429,31 @@
 
 <div id="sigBanner"></div>
 
-<div class="kpi-row" id="kpiRow">
+<div class="kpi-row primary" id="kpiRow">
   <div class="kpi-card featured"><span class="icon">💰</span><div class="label">累计收益</div><div class="value pos" id="kpiCum">-</div><div class="sub" id="kpiCumSub"></div></div>
   <div class="kpi-card"><span class="icon">📈</span><div class="label">年化收益</div><div class="value pos" id="kpiAnn">-</div><div class="sub" id="kpiAnnSub"></div></div>
   <div class="kpi-card"><span class="icon">📉</span><div class="label">最大回撤</div><div class="value down" id="kpiMDD">-</div><div class="sub" id="kpiMDDSub"></div></div>
-  <div class="kpi-card"><span class="icon">⏱️</span><div class="label">当前回撤</div><div class="value down" id="kpiCurDD">-</div><div class="sub" id="kpiCurDDSub"></div></div>
-  <div class="kpi-card"><span class="icon">🗓️</span><div class="label">近 <input type="number" id="kpiDays" value="5" min="1" max="9999"> 日收益</div><div class="value" id="kpiCustom">-</div><div class="sub" id="kpiCustomSub"></div><div class="sub date-row">或自 <input type="date" id="kpiDate"> 起</div></div>
   <div class="kpi-card"><span class="icon">📅</span><div class="label">今年收益</div><div class="value" id="kpiYTD">-</div><div class="sub" id="kpiYTDSub"></div></div>
-  <div class="kpi-card"><span class="icon">⚖️</span><div class="label">超额收益</div><div class="value" id="kpiEx">-</div><div class="sub" id="kpiExSub"></div></div>
-  <div class="kpi-card"><span class="icon">🚦</span><div class="label">信号状态</div><div class="value" id="kpiSig">-</div><div class="sub" id="kpiSigSub"></div></div>
-  <div class="kpi-card"><span class="icon">🕒</span><div class="label">最近更新</div><div class="value" id="kpiUpd">-</div><div class="sub" id="kpiUpdSub"></div></div>
 </div>
 
+<div class="mini-row" id="miniRow">
+  <div class="mini-card"><div class="label">当前回撤</div><div class="value down" id="kpiCurDD">-</div><div class="sub" id="kpiCurDDSub"></div></div>
+  <div class="mini-card"><div class="label">近 <input type="number" id="kpiDays" value="5" min="1" max="9999"> 日收益</div><div class="value" id="kpiCustom">-</div><div class="sub" id="kpiCustomSub"></div><div class="sub date-row">或自 <input type="date" id="kpiDate"> 起</div></div>
+  <div class="mini-card"><div class="label">超额收益</div><div class="value" id="kpiEx">-</div><div class="sub" id="kpiExSub"></div></div>
+  <div class="mini-card"><div class="label">信号状态</div><div class="value" id="kpiSig">-</div><div class="sub" id="kpiSigSub"></div></div>
+  <div class="mini-card hide-sm"><div class="label">最近更新</div><div class="value" id="kpiUpd">-</div><div class="sub" id="kpiUpdSub"></div></div>
+</div>
+
+<div class="tabs" id="tabBar">
+  <button class="on" data-tab="overview">概览</button>
+  <button data-tab="returns">收益</button>
+  <button data-tab="risk">风险</button>
+  <button data-tab="detail">明细</button>
+</div>
+
+<div class="memo" id="strategyMemo"></div>
+
+<section class="tab-panel" data-tab="overview">
 <div class="card">
   <div class="card-head">
     <h2>走势总览</h2>
@@ -417,7 +472,9 @@
   </div>
   <div class="stat-grid" id="legStats"></div>
 </div>
+</section>
 
+<section class="tab-panel" data-tab="returns" hidden>
 <div class="card">
   <div class="card-head">
     <h2>月度 / 年度收益</h2>
@@ -437,7 +494,9 @@
     <table class="ret-table" id="assetRetTable"></table>
   </div>
 </div>
+</section>
 
+<section class="tab-panel" data-tab="risk" hidden>
 <div class="card">
   <div class="card-head">
     <h2>每日收益</h2>
@@ -461,7 +520,9 @@
   </div>
   <div id="rollChart"></div>
 </div>
+</section>
 
+<section class="tab-panel" data-tab="detail" hidden>
 <div class="card">
   <div class="card-head">
     <h2>持仓明细</h2>
@@ -477,6 +538,7 @@
     </table>
   </div>
 </div>
+</section>
 
 <script>
 // ===== 主题 =====
@@ -486,6 +548,26 @@ let ddChart = null;
 let rollChart = null;
 let lastData = null;
 let klineMode = false;   // 走势总览：false=折线，true=K线（平均股价）
+
+// ===== 标签页：只切换面板，图表在切换后 resize =====
+const tabBar = document.getElementById('tabBar');
+function activateTab(name) {
+  for (const b of tabBar.children) b.classList.toggle('on', b.dataset.tab === name);
+  document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.dataset.tab !== name; });
+  requestAnimationFrame(() => {
+    if (name === 'overview' && chart) chart.resize();
+    if (name === 'risk') [dailyChart, ddChart, rollChart].forEach(c => c && c.resize());
+  });
+}
+tabBar.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (b) activateTab(b.dataset.tab);
+});
+
+function resizeAll() {
+  for (const c of [chart, dailyChart, ddChart, rollChart]) if (c) c.resize();
+}
+window.addEventListener('resize', resizeAll);
 document.getElementById('klineToggle').addEventListener('click', e => {
   const btn = e.target.closest('button');
   if (!btn) return;
@@ -605,6 +687,7 @@ function loadData() {
     renderRolling(data);
     renderLegStats(data);
     renderTable(data);
+    resizeAll();
     if (lastLive) patchLive(lastLive);   // loadData 会重置信号横幅，这里补回盘中预览
   }).catch(e => {
     document.getElementById('err').style.display = 'block';
@@ -780,7 +863,9 @@ function renderStatus(data) {
       : `　|　防守择优: 若切防守选${defName(dp.next_pick)}（近20日 红利低波${m1} / 现金流${m2}，截至${dp.mom_date}）`;
   }
 
-  el.innerHTML = `${hold}　|　均价 ${avgNow?.toFixed(2)}　|　DIF ${lastDIF?.toFixed(4)}${difDir}(${difPos})　|　上次换仓 ${lastSig}${dpTxt}`;
+  el.innerHTML = `${hold}　|　均价 ${avgNow?.toFixed(2)}　|　DIF ${lastDIF?.toFixed(4)}${difDir}`;
+  const memo = document.getElementById('strategyMemo');
+  if (memo) memo.innerHTML = `上次换仓 ${lastSig}${dpTxt}`;
 }
 
 // ===== KPI 指标卡片 =====
