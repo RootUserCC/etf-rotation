@@ -1630,15 +1630,15 @@ function render(data) {
       { type: 'category', data: D, gridIndex: 1, boundaryGap: false, show: false }
     ],
     yAxis: [
-      { type: 'value', gridIndex: 0, name: '平均股价(元)', scale: true,
+      { type: 'value', gridIndex: 0, name: narrow ? '' : '平均股价(元)', scale: true,
         nameTextStyle: { color: T.muted },
         axisLabel: { color: T.axisText },
         splitLine: { lineStyle: { color: T.splitLine } } },
-      { type: 'value', gridIndex: 0, name: 'ETF(元)', scale: true,
+      { type: 'value', gridIndex: 0, name: narrow ? '' : 'ETF(元)', scale: true,
         nameTextStyle: { color: T.muted },
         axisLabel: { color: T.axisText },
         splitLine: { show: false } },
-      { type: 'value', gridIndex: 1, name: 'DIF', scale: true,
+      { type: 'value', gridIndex: 1, name: narrow ? '' : 'DIF', scale: true,
         nameTextStyle: { color: T.muted },
         axisLabel: { color: T.axisText },
         splitLine: { lineStyle: { color: T.splitLine } } }
