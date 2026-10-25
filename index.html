@@ -122,6 +122,15 @@
   .down { color: var(--down); }
 
   .updated { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .live-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--up); margin-right: 5px; vertical-align: 1px;
+    animation: livePulse 1.2s ease-in-out infinite;
+  }
+  @keyframes livePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .3; transform: scale(.75); }
+  }
   .btn {
     border: 1px solid var(--border2); background: var(--card2);
     color: var(--muted); width: 34px; height: 34px; border-radius: 9px;
@@ -645,7 +654,7 @@ function patchLive(d) {
   // 当前持仓标的：进攻仓取 159552（2024-06 后），防守仓取 512890
   const legCode = sig.holding === 'atk' ? '159552' : '512890';
   const leg = (d.etfs || []).find(e => e.code === legCode);
-  badge.innerHTML = `盘中 ${d.time} · 平均股价 `
+  badge.innerHTML = `<span class="live-dot"></span>盘中 ${d.time} · 平均股价 `
     + (a.value != null ? `<b>${a.value.toFixed(2)}</b> ` : '-- ')
     + (a.chg_pct != null ? `<span style="color:${a.chg_pct >= 0 ? '#e5484d' : '#0f9d58'}">${chg(a.chg_pct)}</span>` : '')
     + (leg ? ` · ${leg.name} <span style="color:${leg.chg_pct >= 0 ? '#e5484d' : '#0f9d58'}">${chg(leg.chg_pct)}</span>` : '');
@@ -659,6 +668,49 @@ function patchLive(d) {
     banner.textContent = txt;
     banner.dataset.live = '1';
   }
+  // 图表叠加“今天”的临时点
+  if (a.value != null && d.today) {
+    const prices = {};
+    for (const e of (d.etfs || [])) prices[e.code] = e.price;
+    liveChart = {
+      date: d.today, avg: a.value, ohlc: a.ohlc || null,
+      etfs: prices, dif: sig.dif, dea: sig.dea,
+    };
+    patchLiveChart();
+  }
+}
+
+// 盘中图表：把“今天”的临时点叠到图上（不改 lastData，KPI/回测序列保持收盘口径）
+let liveChart = null;
+
+function patchLiveChart() {
+  if (!chart || !lastData || !liveChart || !liveChart.date) return;
+  const lc = liveChart;
+  const D = lastData.dates.slice();
+  const lastIsToday = D[D.length - 1] === lc.date;
+  if (!lastIsToday) D.push(lc.date);
+
+  const ext = (arr, v) => {
+    const a = (arr || []).slice();
+    if (!a.length) return [v];
+    if (lastIsToday) a[a.length - 1] = v; else a.push(v);
+    return a;
+  };
+  const px = (code) => (lc.etfs && lc.etfs[code] != null) ? lc.etfs[code] : null;
+  const avgData = (klineMode && lastData.avg_k)
+    ? ext(lastData.avg_k, lc.ohlc)
+    : ext(lastData.avg, lc.avg);
+
+  chart.setOption({
+    xAxis: [{ data: D }, { data: D }],
+    series: [
+      { id: 'avg', data: avgData },
+      { id: 'etf2000e', data: ext(lastData.etf2000e, px('159552')) },
+      { id: 'etfdiv', data: ext(lastData.etfdiv, px('512890')) },
+      { id: 'dif', data: ext(lastData.dif, lc.dif) },
+      { id: 'dea', data: ext(lastData.dea, lc.dea) },
+    ],
+  }, { notMerge: false, lazyUpdate: true });
 }
 
 // ===== 顶部状态摘要 =====
@@ -1371,7 +1423,29 @@ function render(data) {
       formatter: params => {
         const date = params && params.length ? params[0].axisValue : '';
         const i = D.indexOf(date);
-        if (i < 0) return date;
+        if (i < 0) {
+          // 盘中临时点：lastData 里没有，用 liveChart 的数据渲染
+          if (!liveChart || date !== liveChart.date) return date;
+          const lc = liveChart;
+          let html = `<div style="font-weight:600;margin-bottom:4px">${date} `
+                   + `<span style="color:#f5a623;font-size:11px">盘中</span></div>`;
+          if (lc.ohlc) {
+            const [o, c, lo, hi] = lc.ohlc;
+            const cc = c >= o ? T.buy : T.sell;
+            html += `<div style="color:${cc}">开 ${o.toFixed(2)}　高 ${hi.toFixed(2)}　低 ${lo.toFixed(2)}　收 <b>${c.toFixed(2)}</b></div>`;
+          } else if (lc.avg != null) {
+            html += `<div>平均股价 <b>${lc.avg.toFixed(2)}</b></div>`;
+          }
+          for (const [name, code, color, dp] of [
+            ['中证2000增强', '159552', T.etf2000e, 3],
+            ['红利低波ETF', '512890', T.etfdiv, 3]]) {
+            const v = lc.etfs ? lc.etfs[code] : null;
+            if (v != null) html += `<div style="color:${color}">${name} ${v.toFixed(dp)}</div>`;
+          }
+          html += `<div style="margin-top:4px;color:${T.muted}">DIF ${lc.dif == null ? '-' : lc.dif.toFixed(4)}`
+                + `　DEA ${lc.dea == null ? '-' : lc.dea.toFixed(4)}</div>`;
+          return html;
+        }
         // 日涨跌幅：ETF 用后复权序列计算（避免除权日缺口失真），价格仍显示不复权真实价
         const pct = (arr, base) => {
           if (i <= 0 || arr[i] == null || base[i - 1] == null) return '';
@@ -1450,7 +1524,7 @@ function render(data) {
     series: [
       // 平均股价：折线 / K线 两种形态，共用持仓区间底纹与换仓点标注
       ...(klineMode && data.avg_k ? [{
-        name: '平均股价(左轴)', type: 'candlestick', data: data.avg_k,
+        id: 'avg', name: '平均股价(左轴)', type: 'candlestick', data: data.avg_k,
         xAxisIndex: 0, yAxisIndex: 0,
         itemStyle: { color: T.buy, color0: T.sell,
           borderColor: T.buy, borderColor0: T.sell },
@@ -1466,7 +1540,7 @@ function render(data) {
           data: marks
         }
       }] : [{
-        name: '平均股价(左轴)', type: 'line', data: data.avg,
+        id: 'avg', name: '平均股价(左轴)', type: 'line', data: data.avg,
         xAxisIndex: 0, yAxisIndex: 0,
         symbol: 'none', lineStyle: { width: 2, color: T.avg },
         itemStyle: { color: T.avg },
@@ -1484,14 +1558,14 @@ function render(data) {
         }
       }]),
       {
-        name: '中证2000增强ETF(右轴)', type: 'line', data: data.etf2000e,
+        id: 'etf2000e', name: '中证2000增强ETF(右轴)', type: 'line', data: data.etf2000e,
         xAxisIndex: 0, yAxisIndex: 1,
         symbol: 'none', lineStyle: { width: 1.6, color: T.etf2000e },
         itemStyle: { color: T.etf2000e },
         sampling: 'lttb', large: true, largeThreshold: 400
       },
       {
-        name: '红利低波ETF(右轴)', type: 'line', data: data.etfdiv,
+        id: 'etfdiv', name: '红利低波ETF(右轴)', type: 'line', data: data.etfdiv,
         xAxisIndex: 0, yAxisIndex: 1,
         symbol: 'none', lineStyle: { width: 1.4, color: T.etfdiv },
         itemStyle: { color: T.etfdiv },
@@ -1510,7 +1584,7 @@ function render(data) {
         barWidth: 4, barGap: 0, itemStyle: { color: '#fdd835' },
         tooltip: { show: false }, emphasis: { disabled: true } },
       {
-        name: 'DIF', type: 'line', data: data.dif,
+        id: 'dif', name: 'DIF', type: 'line', data: data.dif,
         xAxisIndex: 1, yAxisIndex: 2,
         symbol: 'none', lineStyle: { width: 1, color: T.dif },
         itemStyle: { color: T.dif },
@@ -1526,7 +1600,7 @@ function render(data) {
         }
       },
       {
-        name: 'DEA', type: 'line', data: data.dea,
+        id: 'dea', name: 'DEA', type: 'line', data: data.dea,
         xAxisIndex: 1, yAxisIndex: 2,
         symbol: 'none', lineStyle: { width: 1, color: T.dea },
         itemStyle: { color: T.dea },
