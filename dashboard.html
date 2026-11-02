@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>监控仪表盘 · ETF 轮动监控</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="ETF 轮动策略实时监控：信号预警、走势总览、KPI 指标、收益与风险分析。">
+<script src="echarts.min.js"></script>
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+
+<div class="page">
+  <div class="page-err" id="err">数据加载失败：请先运行 export_json.py 生成 data.json，并通过本地服务或已发布站点访问（勿直接双击 html）。</div>
+
+  <div class="sig-banner" id="sigBanner"></div>
+
+  <div class="kpi-row" id="kpiRow">
+    <div class="kpi-card featured"><span class="icon">💰</span><div class="label">累计收益</div><div class="value pos" id="kpiCum">-</div><div class="sub" id="kpiCumSub"></div></div>
+    <div class="kpi-card"><span class="icon">📈</span><div class="label">年化收益</div><div class="value pos" id="kpiAnn">-</div><div class="sub" id="kpiAnnSub"></div></div>
+    <div class="kpi-card"><span class="icon">📉</span><div class="label">最大回撤</div><div class="value down" id="kpiMDD">-</div><div class="sub" id="kpiMDDSub"></div></div>
+    <div class="kpi-card"><span class="icon">📅</span><div class="label">今年收益</div><div class="value" id="kpiYTD">-</div><div class="sub" id="kpiYTDSub"></div></div>
+  </div>
+
+  <div class="mini-row" id="miniRow">
+    <div class="mini-card"><div class="label">当前回撤</div><div class="value down" id="kpiCurDD">-</div><div class="sub" id="kpiCurDDSub"></div></div>
+    <div class="mini-card"><div class="label">近 <input type="number" id="kpiDays" value="5" min="1" max="9999"> 日收益</div><div class="value" id="kpiCustom">-</div><div class="sub" id="kpiCustomSub"></div><div class="sub date-row">或自 <input type="date" id="kpiDate"> 起</div></div>
+    <div class="mini-card"><div class="label">超额收益</div><div class="value" id="kpiEx">-</div><div class="sub" id="kpiExSub"></div></div>
+    <div class="mini-card"><div class="label">信号状态</div><div class="value" id="kpiSig" style="font-size:16px;white-space:nowrap">-</div><div class="sub" id="kpiSigSub"></div></div>
+    <div class="mini-card hide-sm"><div class="label">最近更新</div><div class="value" id="kpiUpd" style="font-size:13px;white-space:nowrap">-</div><div class="sub" id="kpiUpdSub"></div></div>
+  </div>
+
+  <div class="tabs" id="tabBar">
+    <button class="on" data-tab="overview">概览</button>
+    <button data-tab="returns">收益</button>
+    <button data-tab="risk">风险</button>
+  </div>
+
+  <div class="memo" id="strategyMemo"></div>
+
+  <section class="tab-panel" data-tab="overview">
+    <div class="card">
+      <div class="card-head">
+        <h2>走势总览</h2>
+        <span class="seg-toggle" id="klineToggle">
+          <button class="on" data-mode="line">折线</button><button data-mode="k">K线</button>
+        </span>
+        <span class="hint">▲=买入进攻仓　▼=卖出进攻仓（换入红利低波）　底纹=持仓区间（红=进攻仓 / 绿=红利低波），段收益见<a href="trades.html" style="color:var(--accent)">交易明细</a> · 拖动下方滑块缩放　｜　口径：进攻仓 2024-06-28 起为中证2000增强ETF(159552)，此前为中证1000ETF(512100)</span>
+      </div>
+      <div id="chart" class="chart-xl"><div class="skel">加载图表数据…</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>持仓段统计</h2>
+        <span class="hint">按"笔"统计（一次完整买入→卖出为一段）· 已含双边费用 · 决策的单位是笔不是天</span>
+      </div>
+      <div class="stat-grid" id="legStats"></div>
+    </div>
+  </section>
+
+  <section class="tab-panel" data-tab="returns" hidden>
+    <div class="card">
+      <div class="card-head">
+        <h2>月度 / 年度收益</h2>
+        <span class="hint">策略净值，含费用 · 小字=该期 进攻仓 / 红利低波 贡献（乘积口径：期收益 = (1+进攻贡献)×(1+红利贡献) − 1，切换日归入新仓位）</span>
+      </div>
+      <div class="table-scroll">
+        <table class="ret-table" id="retTable"></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>进攻 / 防守收益</h2>
+        <span class="hint">每格 = <span class="atk">进攻</span> / <span class="div">防守</span> 买入持有收益，按月末/年末环比 · 进攻仓=512100 拼 159552，防守仓=512890 · 不含轮动信号与交易费用</span>
+      </div>
+      <div class="table-scroll">
+        <table class="ret-table" id="assetRetTable"></table>
+      </div>
+    </div>
+  </section>
+
+  <section class="tab-panel" data-tab="risk" hidden>
+    <div class="card">
+      <div class="card-head">
+        <h2>每日收益</h2>
+        <span class="hint" id="dailyStats"></span>
+      </div>
+      <div id="dailyChart" class="chart-sm"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>回撤</h2>
+        <span class="hint" id="ddStats"></span>
+      </div>
+      <div id="ddChart" class="chart-md"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>滚动指标</h2>
+        <span class="hint">滚动 250 日（约一年）超额收益：策略 − 进攻仓持有 / − 50/50 静态组合 · 持续在零轴上方 = 择时仍有效；长期贴零或转负才是钝化警报</span>
+      </div>
+      <div id="rollChart" class="chart-md"></div>
+    </div>
+  </section>
+</div>
+
+<script src="assets/js/common.js"></script>
+<script src="assets/js/dashboard.js"></script>
+</body>
+</html>

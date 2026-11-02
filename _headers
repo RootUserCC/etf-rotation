@@ -1,8 +1,14 @@
 /
   Cache-Control: no-cache
 
-/index.html
+/*.html
+  Cache-Control: no-cache
+
+/assets/*
   Cache-Control: no-cache
 
 /data.json
+  Cache-Control: no-cache
+
+/live.json
   Cache-Control: no-cache

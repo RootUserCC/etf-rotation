@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>策略研究 · ETF 轮动监控</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="平均股价 DIF 拐点轮动策略的完整研究文档：信号定义、参数寻优、标的切换依据与回测对比。">
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+
+<div class="page">
+  <section class="doc-hero">
+    <h2>策略研究</h2>
+    <p>基于通达信「平均股价」指数（880003）MACD-DIF 拐点信号，在中证2000增强ETF（159552）与红利低波ETF（512890）之间轮动的量化策略完整文档。2024-06-28 之前的历史进攻仓为中证1000ETF（512100）。</p>
+  </section>
+
+  <div class="card"><div class="card-body doc-block">
+    <h3>一、信号逻辑（方案B · 对称信号）</h3>
+    <p>信号基于平均股价的 MACD-DIF（参数 12/26/9，与通达信公式一致）：</p>
+    <ul>
+      <li><b style="color:var(--up)">买入信号</b>：DIF 零轴下方拐头向上 → 卖出红利低波ETF，买入进攻仓</li>
+      <li><b style="color:var(--down)">卖出信号</b>：DIF 拐头向下（任意位置）→ 卖出进攻仓，买入红利低波ETF</li>
+      <li>信号 T 日收盘产生，T+1 开盘价成交</li>
+    </ul>
+    <div class="note">为什么用平均股价而不是指数？平均股价反映全市场个股的等权表现，不受权重股结构扭曲，其拐点更接近"赚钱效应"的真实转向。</div>
+
+    <h3>二、方案C · 慢速 DIF 拐点（当前线上方案）</h3>
+    <p>规则与方案B 完全相同，唯一区别是 DIF 参数由 12/26 放慢为 <b>17/34</b>（DEA 不参与拐点判断）。
+    由 <code>optimize.py</code> 网格搜索（1152 组参数）得出；邻域参数（18/32、19/30、20/28 等）收益均在
+    360~390%，非孤立尖峰。样本外（2021-08 后）年化 28.8%、最大回撤 -20.3%，优于全区间表现。</p>
+    <div class="note warn">⚠️ 参数系同一段历史内寻优，存在过拟合风险，仅供参考。</div>
+
+    <h3>三、十年回测对比（2016-11 ~ 2026-08，含双边万1佣金，防守仓 510880 口径）</h3>
+    <div class="doc-table"><table>
+      <thead><tr><th>方案</th><th>累计收益</th><th>年化</th><th>最大回撤</th><th>换仓次数</th></tr></thead>
+      <tbody>
+        <tr><td><b>C 慢速拐点（17/34）</b></td><td class="pos">391.0%</td><td class="pos">17.71%</td><td class="neg">-28.4%</td><td>175</td></tr>
+        <tr><td>B 对称信号</td><td class="pos">209.98%</td><td class="pos">12.29%</td><td class="neg">-28.28%</td><td>219</td></tr>
+        <tr><td>A 原版（零下不卖）</td><td class="pos">70.35%</td><td class="pos">5.61%</td><td class="neg">-42.79%</td><td>63</td></tr>
+        <tr><td>中证1000ETF 持有</td><td class="pos">16.98%</td><td class="pos">1.62%</td><td class="neg">-50.97%</td><td>-</td></tr>
+        <tr><td>红利ETF 持有</td><td class="pos">88.98%</td><td class="pos">6.74%</td><td class="neg">-23.40%</td><td>-</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>四、进攻仓切换：512100 中证1000 → 159552 中证2000增强</h3>
+    <p>2026-08 起进攻仓由中证1000ETF（512100）切换为中证2000增强ETF招商（159552，2024-06-28 上市）。
+    因 159552 上市较晚，网站与回测采用<b>拼接口径</b>：2024-06-28 之前进攻腿=512100（历史不变），之后=159552；
+    回测窗口仍为 2019-01-18（512890 上市）起。</p>
+    <p>同一方案C 信号、同一窗口（2024-06-28 起约 26 个月，含双边万1佣金）对比：</p>
+    <div class="doc-table"><table>
+      <thead><tr><th>进攻腿</th><th>累计收益</th><th>年化</th><th>最大回撤</th></tr></thead>
+      <tbody>
+        <tr><td><b>159552 中证2000增强</b></td><td class="pos">140.5%</td><td class="pos">50.8%</td><td class="neg">-16.2%</td></tr>
+        <tr><td>563300 中证2000ETF</td><td class="pos">118.8%</td><td class="pos">44.3%</td><td class="neg">-16.8%</td></tr>
+        <tr><td>512100 中证1000ETF</td><td class="pos">113.8%</td><td class="pos">42.7%</td><td class="neg">-17.7%</td></tr>
+      </tbody>
+    </table></div>
+    <div class="note">同窗口 159552 买入持有相对 563300 的超额约 +51 个百分点（增强 alpha），且该窗口内 159552 买入持有（136.0%）已接近其轮动收益（140.5%）——优势主要来自增强 alpha 而非择时。窗口偏短，仅供参考。</div>
+
+    <h3>五、防守仓切换：510880 红利 → 512890 红利低波</h3>
+    <p>510880（上证红利指数）纯按股息率加权，煤炭等强周期股权重过高；512890（中证红利低波动指数 H30269）增加低波动筛选，行业更分散、防守属性更纯。同一方案C 信号、同一窗口（2019-01-18 起 ~ 2026-08，含双边万1佣金）对比：</p>
+    <div class="doc-table"><table>
+      <thead><tr><th>组合</th><th>累计收益</th><th>年化</th><th>最大回撤</th><th>换仓次数</th></tr></thead>
+      <tbody>
+        <tr><td><b>512100 + 512890 红利低波</b></td><td class="pos">523.3%</td><td class="pos">27.40%</td><td class="neg">-20.2%</td><td>129</td></tr>
+        <tr><td>512100 + 510880 红利</td><td class="pos">386.3%</td><td class="pos">23.28%</td><td class="neg">-20.3%</td><td>129</td></tr>
+        <tr><td>512890 持有</td><td class="pos">130.9%</td><td class="pos">11.71%</td><td class="neg">-16.5%</td><td>-</td></tr>
+        <tr><td>510880 持有</td><td class="pos">76.4%</td><td class="pos">7.80%</td><td class="neg">-20.3%</td><td>-</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>六、防守池双择优（观察中）</h3>
+    <p>防守仓候选池为 512890 红利低波 与 159201 自由现金流，按近 20 日动量择优。仪表盘顶部的「防守择优」提示给出当前动量对比与若切换防守时的选择，作为辅助参考。</p>
+
+    <h3>七、执行口径</h3>
+    <ul>
+      <li>信号：T 日收盘确认，T+1 开盘价成交，不回撤不犹豫</li>
+      <li>费用：双边万1佣金已计入全部回测与台账</li>
+      <li>复权：ETF 使用通达信除权除息记录自行后复权（512100 修正 1 次份额合并 + 2 次分红；512890 修正 1 次分红），经验证比东财/腾讯的基金复权因子更准确</li>
+      <li>超额基准：沪深300ETF 510300 使用后复权口径；上证指数/创业板指为价格指数（不含分红）</li>
+    </ul>
+    <div class="note warn">⚠️ 本页全部内容仅为个人研究记录，不构成投资建议，勿直接用于实盘。</div>
+  </div></div>
+</div>
+
+<script src="assets/js/common.js"></script>
+<script>
+  Site.injectLayout('strategy', {});
+  Site.loadData().catch(() => {});
+</script>
+</body>
+</html>
