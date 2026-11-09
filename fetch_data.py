@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""数据获取（2026-10 起主通道改为腾讯日线 + 东财平均股价，通达信仅作兜底）。
+
+- ETF 不复权/后复权日线：腾讯 newfqkline（主）/ fqkline（备），每次只取最近 320 根，
+  与本地 CSV 增量合并，历史行不动；后复权按最后重叠日比值衔接，接缝无跳变
+- 指数日线：腾讯不复权日线
+- 平均股价 880003：东财 800005「A股平均股价」（与通达信 880003 同一序列）日线；
+  失败回退通达信；两者都失败保留旧数据并在 data/_status.json 标记 stale
+- 通达信 _connect_hq / HQ_SERVERS 保留，供 compare_variants.py 等旧脚本复用
+
+输出 CSV 到 data/ 目录；进度写 data/_progress.json，状态写 data/_status.json。
 """
-数据获取（2026-09 起全面改为 pytdx 通达信通道，不再使用东财/腾讯网页接口）：
-- ETF 不复权日线：get_security_bars 日线原样（OHLC + vol + amount）
-- ETF 后复权日线：不复权日线 + get_xdxr_info 除权记录自算
-  （category=1 现金分红 / category=11 缩股，与 compare_variants.fetch_etf_hfq_mkt 同一套逻辑）
-- 指数日线：get_index_bars
-- 平均股价 880003：通达信板块指数，get_index_bars（尽力而为，
-  失败时保留旧 CSV、仅告警，不再中断整个更新任务）
-- _connect_hq / HQ_SERVERS 保留供 compare_variants.py / t_ideal.py / t_pattern_long.py 复用
-输出 CSV 到 data/ 目录
-"""
-import sys
 import io
+import json
 import os
+import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
+
+import market_data as md
 
 # pythonw（无窗口计划任务）下 sys.stdout 为 None，不能 reconfigure
 if sys.platform == 'win32' and sys.stdout is not None and not getattr(sys.stdout, '_utf8_wrapped', False):
@@ -26,12 +31,17 @@ if sys.platform == 'win32' and sys.stdout is not None and not getattr(sys.stdout
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stdout._utf8_wrapped = True
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+BASE = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# 通达信 hq 服务器（2026-09 实测：大部分公共节点 TCP 可连但数据查询返回空，
-# 前 8 台为当时实测个股K线+880003 均可用的节点，后面是旧节点留作兜底）
+STATUS_FILE = os.path.join(DATA_DIR, '_status.json')
+PROGRESS_FILE = os.path.join(DATA_DIR, '_progress.json')
+
+# ---------------- 通达信旧通道（保留给 compare_variants / week_diversify 等脚本） ----------------
+
 HQ_SERVERS = [
+    ('117.34.114.13', 7709),
     ('59.36.5.11', 7709),
     ('117.34.114.14', 7709),
     ('117.34.114.15', 7709),
@@ -63,34 +73,21 @@ EXHQ_SERVERS = [
 
 
 def _connect_hq(api):
-    for ip, port in HQ_SERVERS:
-        try:
-            if api.connect(ip, port, time_out=5):
-                probe = api.get_security_bars(9, 1, '600519', 0, 1)
-                if probe:
-                    print('hq 已连接 %s:%d' % (ip, port))
-                    return
-                api.disconnect()
-        except Exception:
-            continue
+    # 公共节点经常整批抽风（能连上但查询返回空），隔几秒再扫一轮可显著降低误判
+    for attempt in range(2):
+        for ip, port in HQ_SERVERS:
+            try:
+                if api.connect(ip, port, time_out=5):
+                    probe = api.get_security_bars(9, 1, '600519', 0, 1)
+                    if probe:
+                        print('hq 已连接 %s:%d' % (ip, port))
+                        return
+                    api.disconnect()
+            except Exception:
+                continue
+        if attempt == 0:
+            time.sleep(5)
     raise RuntimeError('无可用 hq 服务器')
-
-
-def _fetch_bars(api, code: str, total: int = 8000, market: int = 1, index: bool = False):
-    """分页拉日线（category=9），index=True 走板块/指数接口"""
-    fn = api.get_index_bars if index else api.get_security_bars
-    rows = []
-    start = 0
-    while len(rows) < total:
-        batch = fn(9, market, code, start, 800)
-        if not batch:
-            break
-        rows = batch + rows
-        if len(batch) < 800:
-            break
-        start += len(batch)
-        time.sleep(0.3)
-    return rows
 
 
 def _bars_to_df(rows, columns) -> pd.DataFrame:
@@ -103,203 +100,171 @@ def _bars_to_df(rows, columns) -> pd.DataFrame:
 
 
 def fetch_etf_hq(code: str, total: int = 8000, market: int = 1) -> pd.DataFrame:
-    """ETF 日线（不复权）：pytdx get_security_bars（market=1 上海 / 0 深圳）"""
-    from pytdx.hq import TdxHq_API
-    api = TdxHq_API()
-    _connect_hq(api)
-    try:
-        rows = _fetch_bars(api, code, total, market)
-    finally:
-        api.disconnect()
-    if not rows:
-        raise RuntimeError('ETF %s 无数据' % code)
-    return _bars_to_df(rows, ['open', 'high', 'low', 'close', 'vol', 'amount'])
+    """ETF 日线（不复权）。旧签名保留：week_diversify.py 等按 total/market 调用。
+
+    走腾讯日线：total<=320 时一次请求，否则按年翻页取全历史。
+    """
+    if total <= 320:
+        return md.tx_daily(code, market, '')
+    return md.tx_history(code, market, '', start_year=2015)
 
 
 def fetch_etf_hfq(code: str, market: int = 1, total: int = 8000) -> pd.DataFrame:
-    """ETF 后复权日线：不复权日线 + xdxr 除权记录自算（market=1 上海 / 0 深圳）"""
-    from pytdx.hq import TdxHq_API
-    api = TdxHq_API()
-    _connect_hq(api)
-    try:
-        rows = _fetch_bars(api, code, total, market)
-        try:
-            xdxr = api.get_xdxr_info(market, code) or []
-        except Exception:
-            xdxr = []
-    finally:
-        api.disconnect()
-    if not rows:
-        raise RuntimeError('ETF %s 无数据' % code)
-
-    df = _bars_to_df(rows, ['open', 'high', 'low', 'close'])
-
-    close = df['close']
-    ret = close.pct_change().fillna(0.0)
-    n_adj = 0
-    for rec in xdxr:
-        d = pd.Timestamp(rec['year'], rec['month'], rec['day'])
-        pos = close.index.searchsorted(d)
-        if pos >= len(close):
-            continue
-        d = close.index[pos]
-        if pos == 0:
-            continue
-        prev = close.index[pos - 1]
-        if rec['category'] == 1 and rec.get('fenhong'):
-            div = float(rec['fenhong']) / 10.0
-            ret.loc[d] = (close.loc[d] + div) / close.loc[prev] - 1
-            n_adj += 1
-        elif rec['category'] == 11 and rec.get('suogu'):
-            s = float(rec['suogu'])
-            ret.loc[d] = close.loc[d] * s / close.loc[prev] - 1
-            n_adj += 1
-
-    hfq_close = close.iloc[0] * (1 + ret).cumprod()
-    factor = hfq_close / close
-    out = df.mul(factor, axis=0)
-    print('  [TDX复权] %s: 除权记录修正 %d 处' % (code, n_adj))
-    return out
+    """ETF 后复权日线（腾讯 hfqday，与本地历史逐位一致）"""
+    if total <= 320:
+        return md.tx_daily(code, market, 'hfq')
+    return md.tx_history(code, market, 'hfq', start_year=2015)
 
 
 def fetch_index_hq(code: str, market: int = 1, total: int = 8000) -> pd.DataFrame:
-    """指数日线：pytdx get_index_bars（market=1 上海 / 0 深圳）"""
-    from pytdx.hq import TdxHq_API
-    api = TdxHq_API()
-    _connect_hq(api)
-    try:
-        rows = _fetch_bars(api, code, total, market, index=True)
-    finally:
-        api.disconnect()
-    if not rows:
-        raise RuntimeError('指数 %s 无数据' % code)
-    return _bars_to_df(rows, ['open', 'high', 'low', 'close'])
+    """指数日线（不复权）"""
+    if total <= 320:
+        return md.tx_daily(code, market, '')
+    return md.tx_history(code, market, '', start_year=2015)
 
 
 def fetch_avg_price_hq(total: int = 8000):
-    """拉取通达信板块指数 880003 平均股价 日线（尽力而为，全失败返回 None）"""
-    from pytdx.hq import TdxHq_API
-    for ip, port in HQ_SERVERS:
-        api = TdxHq_API()
-        try:
-            if not api.connect(ip, port, time_out=6):
-                continue
-            rows = []
-            start = 0
-            while len(rows) < total:
-                batch = api.get_index_bars(9, 1, '880003', start, 800)
-                if not batch:
-                    break
-                rows = batch + rows
-                if len(batch) < 800:
-                    break
-                start += len(batch)
-                time.sleep(0.3)
-            api.disconnect()
-            if rows:
-                print('hq 已连接 %s:%d' % (ip, port))
-                df = pd.DataFrame(rows)
-                df['date'] = pd.to_datetime(df['datetime'])
-                df = df.set_index('date')[['open', 'high', 'low', 'close']]
-                return df[~df.index.duplicated(keep='last')].sort_index()
-        except Exception:
+    """通达信板块指数 880003 平均股价（兜底通道，全失败返回 None）"""
+    return md.tdx_avg(total)
+
+
+# ---------------- 增量更新 ----------------
+
+def _write_json(path, obj):
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(obj, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def _progress(done, total, current=''):
+    _write_json(PROGRESS_FILE, {
+        'done': done, 'total': total, 'current': current,
+        'time': time.strftime('%Y-%m-%d %H:%M:%S'),
+    })
+
+
+def _update_one(code, market, fq, suffix, errors, kind='etf'):
+    """拉最近 320 根并合并进本地 CSV；本地缺失/缺口过大时全量回补"""
+    if kind == 'index':
+        path = os.path.join(DATA_DIR, 'index_%s.csv' % code)
+        cols = None
+    else:
+        path = os.path.join(DATA_DIR, 'etf_%s%s.csv' % (code, suffix))
+        cols = ['open', 'high', 'low', 'close', 'vol', 'amount'] if suffix == '' else None
+    label = os.path.basename(path)[:-4]
+    try:
+        new = md.tx_daily(code, market, fq, n=320)
+        if os.path.exists(path):
+            old = md.read_price_csv(path)
             try:
-                api.disconnect()
-            except Exception:
-                pass
-            continue
-    return None
+                out = md.merge_append(old, new, label=label, rescale=(fq != ''))
+            except ValueError:
+                print('  [回补] %s 与本地无重叠，拉全历史' % label)
+                out = md.merge_append(old, md.tx_history(code, market, fq), label=label,
+                                      rescale=(fq != ''))
+        else:
+            out = md.tx_history(code, market, fq, start_year=2016 if fq else 2015)
+        md.write_price_csv(out, path, cols)
+        print('  %s: %d 行 %s ~ %s' % (label, len(out), out.index[0].date(), out.index[-1].date()))
+    except Exception as e:  # noqa: BLE001 - 单标的失败不影响其余标的
+        print('  [警告] %s 更新失败(%s)，保留旧 CSV' % (label, repr(e)[:80]))
+        errors.append('%s: %s' % (label, repr(e)[:120]))
 
 
-def _retry(fn, tries=3, delay=3):
-    """拉取失败自动重试（通道偶发断连）"""
+def _etf_last_date():
+    """本地 ETF 数据的最新交易日（用于判断平均股价是否落后）"""
     last = None
-    for i in range(tries):
-        try:
-            return fn()
-        except Exception as e:
-            last = e
-            print('  第%d次失败(%s)，%ds后重试...' % (i + 1, repr(e)[:60], delay))
-            time.sleep(delay)
-    raise last
+    for code, _, _ in md.SYMBOLS:
+        p = os.path.join(DATA_DIR, 'etf_%s_hfq.csv' % code)
+        if os.path.exists(p):
+            d = md.read_price_csv(p).index[-1]
+            last = d if last is None else max(last, d)
+    return last
+
+
+def _update_avg(errors):
+    """平均股价：东财 800005 补最近完整交易日；失败回退通达信；都失败保留旧数据"""
+    path = os.path.join(DATA_DIR, 'avg_880003.csv')
+    old = md.read_avg_csv(path) if os.path.exists(path) else None
+    now = pd.Timestamp.now()
+    today = now.normalize()
+    source = ''
+
+    try:
+        daily, pre_close = md.em_avg_daily()
+        complete = daily[daily.index < today]
+        if now.hour >= 15 and now.minute >= 2 and today in daily.index:
+            complete = pd.concat([complete, daily.loc[[today]]])
+        base = old if old is not None else complete.iloc[:0]
+        out = md.merge_append(base, complete, label='avg_880003', rescale=False)
+        source = 'eastmoney:800005'
+    except Exception as e:  # noqa: BLE001 - 东财限流很常见，回退通达信
+        print('  [警告] 东财平均股价不可用(%s)，尝试通达信 880003...' % repr(e)[:80])
+        errors.append('avg_em: %s' % repr(e)[:120])
+        tdx = md.tdx_avg()
+        if tdx is None or not len(tdx):
+            print('  [警告] 通达信也不可用，avg_880003.csv 保留旧数据')
+            errors.append('avg_tdx: 无可用节点')
+            if old is None:
+                raise RuntimeError('平均股价无任何可用数据源')
+            last = _etf_last_date()
+            stale = last is not None and old.index[-1].normalize() < last.normalize()
+            return old, (old.index[-1].date().isoformat(), 'cached', stale)
+        base = old if old is not None else tdx.iloc[:0]
+        out = md.merge_append(base, tdx, label='avg_880003', rescale=False)
+        source = 'tdx:880003'
+
+    if old is not None and out.index[-1] == old.index[-1] and len(out) == len(old):
+        print('  平均股价无新增（最后 %s）' % out.index[-1].date())
+    else:
+        md.write_avg_csv(out, path)
+        print('  avg_880003: %d 行 ~ %s（来源 %s）' % (len(out), out.index[-1].date(), source))
+    if source == '':
+        source = 'cached'
+
+    # 陈旧判断：平均股价是否落后于 ETF 的最新交易日（节假日不会误报）
+    etf_last = _etf_last_date()
+    stale = etf_last is not None and out.index[-1].normalize() < etf_last.normalize()
+    return out, (out.index[-1].date().isoformat(), source, stale)
 
 
 def main():
-    print('--- 拉取 512100.SH 中证1000ETF(后复权) ---')
-    df1000 = _retry(lambda: fetch_etf_hfq('512100'))
-    df1000.to_csv(os.path.join(DATA_DIR, 'etf_512100_hfq.csv'))
-    print('  %d 行  %s ~ %s' % (len(df1000), df1000.index[0].date(), df1000.index[-1].date()))
+    t0 = time.time()
+    errors = []
+    print('--- 更新 ETF / 指数日线（腾讯通道，增量合并）---')
+    jobs = [(code, market, fq, suffix, 'etf')
+            for code, market, _ in md.SYMBOLS
+            for fq, suffix in (('hfq', '_hfq'), ('', ''))]
+    jobs += [(code, market, '', '', 'index') for code, market, _ in md.INDEXES]
+    total_jobs = len(jobs)
+    _progress(0, total_jobs, 'start')
 
-    print('--- 拉取 512100.SH 中证1000ETF(不复权) ---')
-    df1000_raw = _retry(lambda: fetch_etf_hq('512100'))
-    df1000_raw.to_csv(os.path.join(DATA_DIR, 'etf_512100.csv'))
-    print('  %d 行  %s ~ %s' % (len(df1000_raw), df1000_raw.index[0].date(), df1000_raw.index[-1].date()))
+    done = 0
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futs = {ex.submit(_update_one, code, market, fq, suffix, errors, kind): code
+                for code, market, fq, suffix, kind in jobs}
+        for fut in as_completed(futs):
+            done += 1
+            _progress(done, total_jobs, futs[fut])
 
-    print('--- 拉取 512890.SH 红利低波ETF(后复权) ---')
-    dfdiv = _retry(lambda: fetch_etf_hfq('512890'))
-    dfdiv.to_csv(os.path.join(DATA_DIR, 'etf_512890_hfq.csv'))
-    print('  %d 行  %s ~ %s' % (len(dfdiv), dfdiv.index[0].date(), dfdiv.index[-1].date()))
+    print('--- 更新 880003 平均股价 ---')
+    _, (avg_date, avg_source, avg_stale) = _update_avg(errors)
 
-    print('--- 拉取 512890.SH 红利低波ETF(不复权) ---')
-    dfdiv_raw = _retry(lambda: fetch_etf_hq('512890'))
-    dfdiv_raw.to_csv(os.path.join(DATA_DIR, 'etf_512890.csv'))
-    print('  %d 行  %s ~ %s' % (len(dfdiv_raw), dfdiv_raw.index[0].date(), dfdiv_raw.index[-1].date()))
-
-    # 进攻仓新标的：中证2000增强ETF 159552（深圳 market=0，2024-06-28 上市）
-    print('--- 拉取 159552.SZ 中证2000增强ETF(后复权) ---')
-    df2000e = _retry(lambda: fetch_etf_hfq('159552', market=0))
-    df2000e.to_csv(os.path.join(DATA_DIR, 'etf_159552_hfq.csv'))
-    print('  %d 行  %s ~ %s' % (len(df2000e), df2000e.index[0].date(), df2000e.index[-1].date()))
-
-    print('--- 拉取 159552.SZ 中证2000增强ETF(不复权) ---')
-    df2000e_raw = _retry(lambda: fetch_etf_hq('159552', market=0))
-    df2000e_raw.to_csv(os.path.join(DATA_DIR, 'etf_159552.csv'))
-    print('  %d 行  %s ~ %s' % (len(df2000e_raw), df2000e_raw.index[0].date(), df2000e_raw.index[-1].date()))
-
-    # 进攻池候选：588220 科创100ETF[沪] / 515880 通信ETF[沪] / 159915 创业板ETF[深]（后复权）
-    for code, name, mkt in [('588220', '科创100ETF', 1),
-                            ('515880', '通信ETF', 1),
-                            ('159915', '创业板ETF', 0)]:
-        print('--- 拉取 %s %s(后复权) ---' % (code, name))
-        try:
-            dfx = _retry(lambda: fetch_etf_hfq(code, market=mkt))
-            dfx.to_csv(os.path.join(DATA_DIR, 'etf_%s_hfq.csv' % code))
-            print('  %d 行  %s ~ %s' % (len(dfx), dfx.index[0].date(), dfx.index[-1].date()))
-        except Exception as e:
-            print('  [警告] %s 拉取失败(%s)，保留旧 CSV' % (code, repr(e)[:80]))
-
-    # 880003 平均股价：通达信板块指数，尽力而为，失败保留旧数据不致命
-    print('--- 拉取 880003 平均股价(尽力而为) ---')
-    dfavg = fetch_avg_price_hq()
-    if dfavg is not None and len(dfavg):
-        dfavg.to_csv(os.path.join(DATA_DIR, 'avg_880003.csv'))
-        print('  %d 行  %s ~ %s' % (len(dfavg), dfavg.index[0].date(), dfavg.index[-1].date()))
-        print(dfavg.tail(3).to_string())
-    else:
-        old = pd.read_csv(os.path.join(DATA_DIR, 'avg_880003.csv'), parse_dates=['date'])
-        print('  [警告] 通达信通道不可用，avg_880003.csv 保留旧数据（最后日期 %s），本次不更新'
-              % old['date'].iloc[-1].date())
-
-    print('--- 拉取 510300.SH 沪深300ETF(后复权) ---')
-    df300 = _retry(lambda: fetch_etf_hfq('510300'))
-    df300.to_csv(os.path.join(DATA_DIR, 'etf_510300_hfq.csv'))
-    print('  %d 行  %s ~ %s' % (len(df300), df300.index[0].date(), df300.index[-1].date()))
-
-    # 防守池择优候选：自由现金流ETF 159201（深圳 market=0，2025-02 上市）
-    print('--- 拉取 159201.SZ 自由现金流ETF(后复权) ---')
-    df201 = _retry(lambda: fetch_etf_hfq('159201', market=0))
-    df201.to_csv(os.path.join(DATA_DIR, 'etf_159201_hfq.csv'))
-    print('  %d 行  %s ~ %s' % (len(df201), df201.index[0].date(), df201.index[-1].date()))
-
-    print('--- 拉取 000001.SH 上证指数 ---')
-    dfsh = _retry(lambda: fetch_index_hq('000001', market=1))
-    dfsh.to_csv(os.path.join(DATA_DIR, 'index_000001.csv'))
-    print('  %d 行  %s ~ %s' % (len(dfsh), dfsh.index[0].date(), dfsh.index[-1].date()))
-
-    print('--- 拉取 399006.SZ 创业板指 ---')
-    dfcyb = _retry(lambda: fetch_index_hq('399006', market=0))
-    dfcyb.to_csv(os.path.join(DATA_DIR, 'index_399006.csv'))
-    print('  %d 行  %s ~ %s' % (len(dfcyb), dfcyb.index[0].date(), dfcyb.index[-1].date()))
+    elapsed = round(time.time() - t0, 2)
+    _write_json(STATUS_FILE, {
+        'time': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'avg_date': avg_date,
+        'avg_source': avg_source,
+        'avg_stale': bool(avg_stale),
+        'errors': errors,
+        'elapsed': elapsed,
+    })
+    _progress(total_jobs, total_jobs, 'done')
+    print('完成，用时 %.2fs%s' % (elapsed, '（有告警，见 data/_status.json）' if errors else ''))
+    if errors:
+        for e in errors:
+            print('  ! %s' % e)
 
 
 if __name__ == '__main__':

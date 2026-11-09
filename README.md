@@ -106,7 +106,13 @@ compare_improve.py   # 结构改进对比：空仓第三状态(MA过滤)/尾盘�
 compare_dwt.py       # 做T叠加回测：轮动底仓 + 1/3与1/2仓位VWAP偏离做T（1分钟线，结果见 result_dwt.txt）
 trades_ledger.py     # 方案C理想执行台账：2019年起全部持仓段明细+统计规律（结果见 result_trades.txt）
 optimal_path.py      # 上帝视角最优路径：2026年起两腿每日二选一DP全局最优（结果见 result_optimal.txt）
-site/index.html      # 监控页面（ECharts 已本地化，可离线）
+site/                # 多页网站（ECharts 已本地化，可离线）：
+                     #   index.html     首页（品牌落地页 + 净值对比曲线 + 方案演进表）
+                     #   dashboard.html 监控仪表盘（信号横幅/KPI/走势总览/收益/风险，盘中实时预览）
+                     #   trades.html    交易明细（盈亏结构/段收益分布/持仓明细/信号记录）
+                     #   strategy.html  策略研究（信号定义/参数寻优/标的切换依据/回测对比）
+                     #   about.html     关于（数据源/更新机制/免责声明/运行状态）
+                     #   assets/        共享设计系统（css/js）；serve.mjs + package.json 为本地预览用（不发布）
 server.py            # 网站服务器（静态文件 + /api/update 触发数据更新）
 run_server.pyw       # server.py 的无窗口启动引导（供计划任务/启动.bat 调用）
 启动.bat             # 启动网站 http://127.0.0.1:8001/（经计划任务无窗口后台运行）
@@ -123,6 +129,26 @@ register_tasks.ps1   # 注册计划任务：ETFRotationWeb 开机自启 + ETFRot
 - Python 3.12（`uv venv` 创建于 `.venv/`），依赖：numpy、pandas、pytdx、matplotlib、requests
 - Windows + Git Bash 开发环境
 
+## QMT 联动（行情已连通，交易默认关闭）
+
+- `qmt_source.py`：通过 `xtquant.xtdata` 获取 ETF 实时快照和日线；`live.py` 盘中优先使用 QMT，失败时回退新浪。
+- `qmt_native_probe.py`：QMT 原生只读探针，检查 ETF 日线、盘口及平均股价备用源，不查询或提交委托。
+- `qmt_native_etf_rotation.py`：QMT 原生交易脚本，信号为方案 C（DIF 17/34/9），从进攻仓切入防守仓时比较 512890 / 159201 的近 20 日涨幅；防守期间不在两只防守 ETF 之间换仓。
+- `test_qmt_native.py`：离线安全测试，覆盖信号一致性、数据过期拦截、防守仓不换仓、模拟模式不下单和部分成交停止等。
+
+QMT 没有本策略使用的平均股价指数，因此原生脚本默认读取东财 800005 最近 500 根日线；失败时尝试 `data/avg_880003.csv`。无论来源为何，平均股价或防守仓日线未更新到信号日都不会生成交易指令。收盘后 15:02、15:05、15:08 最多计算三次，已有有效结果则不重复计算。
+
+### 使用顺序
+
+1. 登录 QMT，在项目目录运行 `.venv\Scripts\python.exe -c "import qmt_source; qmt_source.self_test()"`，确认行情可读。
+2. 在 QMT 模型编辑器中先运行 `qmt_native_probe.py`，确认原生环境能看到 ETF 日线、盘口和东财平均股价备用源。
+3. 再导入 `qmt_native_etf_rotation.py`。填写 `ACCOUNT_ID` 和 `STRATEGY_CAPITAL`，但先保持 `ENABLE_TRADE = False`、`TEST_ENV_CONFIRMED = False`，观察收盘信号和次日“拟委托”日志。
+4. 只有在原生模拟日志、持仓、数量和价格都人工核对无误后，才将两个开关同时改为 `True`。任何一个开关关闭都不会调用真实委托接口。
+
+运行状态保存在 `qmt_native_etf_rotation_state.json`。有待执行指令或活动委托时不要删除该文件；状态文件损坏时脚本会禁止委托。脚本只处理白名单内的三只 ETF，遇到同标的其他活动委托、多个白名单持仓、非首个交易日补单、委托未全部成交或状态查询异常时都会停止后续委托。
+
+离线检查命令：`.venv\Scripts\python.exe -m unittest -v test_qmt_native.py`。
+
 ## 免责声明
 
-仅为个人研究原型，不构成投资建议，勿直接用于实盘。
+仅为个人研究原型，不构成投资建议，勿直接用于实盘。QMT 原生脚本在导入券商客户端后仍需先完成只读探针和模拟日志验证。

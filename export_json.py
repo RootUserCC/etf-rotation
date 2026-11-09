@@ -45,6 +45,15 @@ def load(name):
     return df
 
 
+def _status():
+    """fetch_data.py 写入的取数状态（缺失时返回空字典）"""
+    try:
+        with open(os.path.join(DATA_DIR, '_status.json'), encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:  # noqa: BLE001 - 状态文件只是辅助信息
+        return {}
+
+
 def main():
     avg = load('avg_880003.csv')
     etf1000 = load('etf_512100_hfq.csv')       # 后复权：拼接前进攻仓 + 超额基准
@@ -263,6 +272,9 @@ def main():
     except FileNotFoundError:
         print('  (无 etf_159201_hfq.csv，跳过防守择优输出)')
 
+    st = _status()
+    avg_stale = bool(st.get('avg_stale') or
+                     avg.index[-1] < max(etfdiv.index[-1], etf_atk.index[-1]))
     out = {
         'dates': dates,
         'avg': series(avg),
@@ -282,6 +294,10 @@ def main():
         'nav_strat': [round(float(v), 4) for v in wealth.values],   # 真实成交口径净值
         'defense_pick': defense_pick,             # 防守池双择优（512890/159201，近20日动量）
         'updated': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'),
+        'avg_date': avg.index[-1].strftime('%Y-%m-%d'),   # 平均股价数据日期
+        'avg_source': st.get('avg_source', ''),      # eastmoney:800005 / tdx:880003 / cached
+        'avg_stale': avg_stale,
+        'data_errors': st.get('errors', []),
     }
     path = os.path.join(SITE_DIR, 'data.json')
     with open(path, 'w', encoding='utf-8') as f:

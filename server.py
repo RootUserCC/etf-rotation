@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""ETF 轮动网站服务器：静态文件 + /api/update 触发行情数据更新。
+"""ETF 轮动网站服务器：静态文件 + /api/update 触发行情数据更新 + 盘中实时。
 
-打开网页时前端会请求 /api/update，后台依次执行 fetch_data.py、export_json.py；
-10 分钟内重复请求自动跳过，避免频繁抓取。服务器启动时若数据不是最新会自动补跑一次，
-作为计划任务因关机/睡眠错过时的兜底。
+打开网页时前端请求 /api/update，后台线程依次执行 fetch_data.py、export_json.py，
+接口立刻返回，前端用 /api/status 轮询进度；30 秒内重复请求自动跳过。
+live.py 作为守护线程在交易时段刷新 site/live.json（ETF 快照 + 平均股价信号预览）。
 """
+import datetime as dt
 import json
 import random
 import subprocess
@@ -19,12 +20,16 @@ ROOT = Path(__file__).resolve().parent
 SITE_DIR = ROOT / "site"
 PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 LOG_FILE = ROOT / "update.log"
+STATUS_FILE = ROOT / "data" / "_status.json"
+PROGRESS_FILE = ROOT / "data" / "_progress.json"
 PORT = 8001
-THROTTLE_SEC = 10 * 60  # 10 分钟内只更新一次
+THROTTLE_SEC = 30  # 30 秒内只更新一次（force=1 不受限）
 
 _update_lock = threading.Lock()
 _last_run = 0.0
 _running = False
+_run_started = 0.0
+_last_result = {}
 
 _practice_df = None
 
@@ -37,6 +42,12 @@ def practice_df():
         from practice import prepare
         _practice_df = prepare()
     return _practice_df
+
+
+def publish_allowed():
+    """盘中不推送 gh-pages：收盘后（15:05 起）或显式 PUBLISH_ALWAYS=1 才发布"""
+    import os
+    return dt.datetime.now().time() >= dt.time(15, 5) or os.environ.get("PUBLISH_ALWAYS") == "1"
 
 
 def run_update():
@@ -55,8 +66,16 @@ def run_update():
             )
             if proc.returncode != 0:
                 return False, f"{script} 执行失败（退出码 {proc.returncode}），详见 update.log"
-        # 数据导出成功后同步发布 gh-pages（GitHub Pages 网站）；发布失败不影响本地更新结果
-        try:
+        # 数据导出成功后异步发布 gh-pages（不阻塞刷新；发布失败不影响本地更新结果）
+        if publish_allowed():
+            threading.Thread(target=_publish, daemon=True).start()
+    return True, ""
+
+
+def _publish():
+    """后台推送静态站：git push 通常要几秒，放后台避免拖慢页面刷新"""
+    try:
+        with LOG_FILE.open("a", encoding="utf-8") as log:
             log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 运行 publish_site.bat\n")
             subprocess.run(
                 ["cmd.exe", "/c", "publish_site.bat"],
@@ -66,9 +85,22 @@ def run_update():
                 timeout=180,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-        except Exception:  # noqa: BLE001 - 发布失败不阻断主流程
-            log.write("publish_site.bat 调用异常（忽略）\n")
-    return True, ""
+    except Exception:  # noqa: BLE001 - 发布失败不阻断主流程
+        pass
+
+
+def _update_worker():
+    """后台更新线程：结果写入 _last_result，供 /api/status 查询"""
+    global _last_run, _running, _last_result
+    try:
+        ok, err = run_update()
+        _last_result = {"ok": ok, "error": err, "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+    except Exception as e:  # noqa: BLE001 - 线程内异常必须兜底
+        _last_result = {"ok": False, "error": str(e), "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+    finally:
+        with _update_lock:
+            _last_run = time.time()
+            _running = False
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -78,6 +110,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/api/update"):
             self.handle_update()
+        elif self.path.startswith("/api/status"):
+            self.handle_status()
         elif self.path.startswith("/api/practice/day"):
             self.handle_practice_day()
         elif self.path.startswith("/api/practice/optimal"):
@@ -158,31 +192,40 @@ class Handler(SimpleHTTPRequestHandler):
         self._send_json({"ok": True, "rows": rows})
 
     def handle_update(self):
-        global _last_run, _running
+        global _last_run, _running, _run_started
         force = parse_qs(urlparse(self.path).query).get("force", [""])[0] == "1"
-        result = {"ok": True, "skipped": False}
         with _update_lock:
             if _running:
-                # 已有更新在进行中，视为重复打开页面，直接跳过
-                result["skipped"] = True
-            elif not force and time.time() - _last_run < THROTTLE_SEC:
-                result["skipped"] = True
-            else:
-                _running = True
-        if result["skipped"]:
-            return self._send_json(result)
+                return self._send_json({"ok": True, "started": False, "running": True})
+            if not force and time.time() - _last_run < THROTTLE_SEC:
+                return self._send_json({"ok": True, "started": False, "skipped": True,
+                                        "last": _last_result})
+            _running = True
+            _run_started = time.time()
+        threading.Thread(target=_update_worker, daemon=True).start()
+        self._send_json({"ok": True, "started": True})
+
+    def handle_status(self):
+        """更新进度：后台线程是否在跑 + fetch_data 的逐标的进度"""
+        progress = {}
         try:
-            ok, err = run_update()
-            result = {"ok": ok, "skipped": False}
-            if not ok:
-                result["error"] = err
-        except Exception as e:  # noqa: BLE001 - 接口需兜底返回 JSON
-            result = {"ok": False, "skipped": False, "error": str(e)}
-        finally:
-            with _update_lock:
-                _last_run = time.time()
-                _running = False
-        self._send_json(result)
+            progress = json.loads(PROGRESS_FILE.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 - 没有进度文件属正常情况
+            pass
+        status = {}
+        try:
+            status = json.loads(STATUS_FILE.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            pass
+        with _update_lock:
+            running = _running
+            started = _run_started
+            last = _last_result
+        self._send_json({
+            "ok": True, "running": running,
+            "elapsed": round(time.time() - started, 1) if running and started else 0,
+            "progress": progress, "status": status, "last": last,
+        })
 
     def end_headers(self):
         # 页面和 JSON 每天都会更新；不发缓存头时浏览器按 Last-Modified 的 10%
@@ -230,8 +273,19 @@ def startup_update_if_stale():
             _running = False
 
 
+def _live_loop():
+    """盘中实时线程：失败只记日志，绝不拖垮网站服务"""
+    try:
+        import live
+        live.main()
+    except Exception as e:  # noqa: BLE001
+        with LOG_FILE.open("a", encoding="utf-8") as log:
+            log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] live 线程退出: {e!r}\n")
+
+
 if __name__ == "__main__":
     # 绑定 0.0.0.0：本机用 127.0.0.1 访问，手机等局域网设备用本机局域网 IP 访问
+    import os
     import socket
     try:
         lan_ip = socket.gethostbyname(socket.gethostname())
@@ -239,4 +293,6 @@ if __name__ == "__main__":
         lan_ip = "?"
     print(f"服务已启动: http://127.0.0.1:{PORT}/  (局域网: http://{lan_ip}:{PORT}/)")
     threading.Thread(target=startup_update_if_stale, daemon=True).start()
+    if os.environ.get("LIVE_DISABLE") != "1":
+        threading.Thread(target=_live_loop, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

@@ -5,9 +5,12 @@ if not exist .gh-pages (
   echo [site] .gh-pages worktree missing, skip
   exit /b 0
 )
-copy /y site\index.html .gh-pages\ >nul
-copy /y site\data.json .gh-pages\ >nul
-copy /y site\echarts.min.js .gh-pages\ >nul
+rem Multi-page site: mirror the whole site/ tree; exclude the worktree .git and local-only dev server files
+robocopy site .gh-pages /MIR /XF .git serve.mjs package.json /XD .git >nul
+if errorlevel 8 (
+  echo [site] robocopy FAILED
+  exit /b 0
+)
 cd .gh-pages
 git add -A
 git diff --cached --quiet

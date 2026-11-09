@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>交易明细 · ETF 轮动监控</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="ETF 轮动策略全部换仓台账：持仓段明细、信号记录、段收益分布与盈亏结构统计。">
+<script src="echarts.min.js"></script>
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+
+<div class="page">
+  <div class="page-err" id="err">数据加载失败：请先运行 export_json.py 生成 data.json，并通过本地服务或已发布站点访问（勿直接双击 html）。</div>
+
+  <section class="doc-hero">
+    <h2>交易明细</h2>
+    <p>方案C 慢速DIF(17/34) 的完整换仓台账。每行是一段完整持仓（买入→卖出为一段），收益已含双边万1佣金；累计收益为复利连乘。决策的单位是"笔"不是"天"——段胜率与盈亏比直接回答"这次换仓最坏会怎样"。</p>
+  </section>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>盈亏结构</h2>
+      <span class="hint">按已了结持仓段统计</span>
+    </div>
+    <div class="stat-grid" id="legStats"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>段收益分布</h2>
+      <span class="hint" id="distStats">每段收益落点直方图（含费用）· 红色=盈利段，绿色=亏损段</span>
+    </div>
+    <div id="distChart" class="chart-md"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>持仓明细</h2>
+      <span class="seg-toggle" id="legFilter">
+        <button class="on" data-f="all">全部</button><button data-f="1000">进攻仓</button><button data-f="div">红利低波</button>
+      </span>
+      <span class="hint">最新在前 · 收益已含双边费用 · 累计收益为复利连乘：本行累计 = (1+上行累计) × (1+本行收益) − 1</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>持仓标的</th><th>买入日期</th><th>买入价</th><th>卖出日期</th><th>卖出价</th>
+              <th>持有交易日</th><th>收益</th><th>累计收益</th></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>信号记录</h2>
+      <span class="hint">信号日 T 收盘确认 → T+1 开盘价成交 · 最新在前</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>信号</th><th>信号日</th><th>成交日</th><th>操作</th><th>成交价</th><th>DIF</th><th>了结段收益</th></tr>
+        </thead>
+        <tbody id="sigTbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/common.js"></script>
+<script src="assets/js/trades.js"></script>
+</body>
+</html>
