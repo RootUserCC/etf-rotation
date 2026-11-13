@@ -202,7 +202,7 @@ body::before {
 .kpi-row { display: flex; gap: 14px; margin: 16px 16px; flex-wrap: wrap; }
 .kpi-card {
   position: relative; overflow: hidden;
-  flex: 1; min-width: 150px; max-width: 240px;
+  flex: 1; min-width: 150px;
   background: var(--card); border: 1px solid var(--border);
   border-radius: 14px; padding: 16px 20px 14px; box-shadow: var(--shadow);
   transition: transform 0.15s, box-shadow 0.2s;
@@ -244,7 +244,6 @@ body::before {
 .kpi-card.featured .icon { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.25); }
 
 /* ---------- 次要指标（紧凑条） ---------- */
-.mini-row { display: flex; gap: 10px; margin: 0 16px 4px; flex-wrap: wrap; }
 .mini-card {
   flex: 1 1 150px; min-width: 140px;
   background: transparent; border: 1px solid var(--border);
@@ -512,7 +511,6 @@ td.pos { color: var(--up); }
   .kpi-card { flex: 1 1 calc(50% - 5px); min-width: 0; max-width: none; padding: 12px 14px; }
   .kpi-card .value { font-size: 21px; }
   .kpi-card .icon { width: 26px; height: 26px; font-size: 13px; }
-  .mini-row { margin: 0 12px; gap: 8px; }
   .mini-card { flex: 1 1 calc(50% - 4px); min-width: 0; padding: 9px 12px; }
   .tabs { margin: 12px 12px 0; width: calc(100% - 24px); justify-content: space-between; }
   .tabs button { flex: 1; padding: 7px 0; }
