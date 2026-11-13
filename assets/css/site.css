@@ -199,10 +199,10 @@ body::before {
 .sig-banner.info { display: block; background: var(--card); border-color: var(--border); color: var(--muted); font-weight: 500; }
 
 /* ---------- KPI 卡片 ---------- */
-.kpi-row { display: flex; gap: 14px; margin: 16px 16px; flex-wrap: wrap; }
+.kpi-row { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 10px; margin: 16px; }
 .kpi-card {
   position: relative; overflow: hidden;
-  flex: 1; min-width: 150px;
+  flex: 1; min-width: 0;
   background: var(--card); border: 1px solid var(--border);
   border-radius: 14px; padding: 16px 20px 14px; box-shadow: var(--shadow);
   transition: transform 0.15s, box-shadow 0.2s;
@@ -245,7 +245,7 @@ body::before {
 
 /* ---------- 次要指标（紧凑条） ---------- */
 .mini-card {
-  flex: 1 1 150px; min-width: 140px;
+  flex: 1 1 150px; min-width: 0;
   background: transparent; border: 1px solid var(--border);
   border-radius: 12px; padding: 10px 14px;
 }
@@ -485,6 +485,7 @@ td.pos { color: var(--up); }
 
 /* ---------- 响应式 ---------- */
 @media (max-width: 900px) {
+  .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .mainnav {
     position: fixed; top: 60px; left: 0; right: 0; z-index: 99;
     flex-direction: column; gap: 2px; padding: 10px 14px 14px;
@@ -504,6 +505,7 @@ td.pos { color: var(--up); }
   .hero h2 { font-size: 26px; }
 }
 @media (max-width: 560px) {
+  .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .brand h1 { font-size: 14px; }
   .brand .logo { width: 30px; height: 30px; }
   .updated, .live-badge { display: none; }
