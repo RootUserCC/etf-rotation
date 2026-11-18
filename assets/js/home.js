@@ -130,7 +130,14 @@ function renderAll(data) {
   if (navChart) navChart.resize();
 }
 
-window.addEventListener('resize', () => { if (navChart) navChart.resize(); });
+let resizeFrame = 0;
+window.addEventListener('resize', () => {
+  if (resizeFrame) return;
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = 0;
+    if (navChart) navChart.resize();
+  });
+});
 document.addEventListener('site:themechange', () => { if (Site.lastData) renderNavChart(Site.lastData); });
 
 Site.loadData().then(renderAll).catch(e => {

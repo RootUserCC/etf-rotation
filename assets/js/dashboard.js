@@ -14,7 +14,11 @@ let lastLive = null;
 // ===== 标签页 =====
 const tabBar = document.getElementById('tabBar');
 function activateTab(name) {
-  for (const b of tabBar.children) b.classList.toggle('on', b.dataset.tab === name);
+  for (const b of tabBar.children) {
+    const active = b.dataset.tab === name;
+    b.classList.toggle('on', active);
+    b.setAttribute('aria-pressed', String(active));
+  }
   document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.dataset.tab !== name; });
   requestAnimationFrame(() => {
     if (name === 'overview' && chart) chart.resize();
@@ -29,13 +33,24 @@ tabBar.addEventListener('click', e => {
 function resizeAll() {
   for (const c of [chart, dailyChart, ddChart, rollChart]) if (c) c.resize();
 }
-window.addEventListener('resize', resizeAll);
+let resizeFrame = 0;
+window.addEventListener('resize', () => {
+  if (resizeFrame) return;
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = 0;
+    resizeAll();
+  });
+});
 
 document.getElementById('klineToggle').addEventListener('click', e => {
   const btn = e.target.closest('button');
   if (!btn) return;
   klineMode = btn.dataset.mode === 'k';
-  for (const b of btn.parentElement.children) b.classList.toggle('on', b === btn);
+  for (const b of btn.parentElement.children) {
+    const active = b === btn;
+    b.classList.toggle('on', active);
+    b.setAttribute('aria-pressed', String(active));
+  }
   if (Site.lastData) render(Site.lastData);
 });
 

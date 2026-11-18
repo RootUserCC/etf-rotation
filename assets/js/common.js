@@ -28,7 +28,12 @@ const Site = (() => {
     document.documentElement.dataset.theme = t;
     try { localStorage.setItem(THEME_KEY, t); } catch (e) {}
     const btn = document.getElementById('themeBtn');
-    if (btn) btn.textContent = t === 'light' ? '🌙' : '☀️';
+    if (btn) {
+      btn.textContent = t === 'light' ? '🌙' : '☀️';
+      const label = t === 'light' ? '切换到深色主题' : '切换到浅色主题';
+      btn.setAttribute('aria-label', label);
+      btn.title = label;
+    }
   }
   function initTheme() {
     let t = 'dark';
@@ -78,7 +83,7 @@ const Site = (() => {
   function injectLayout(pageKey, opts) {
     opts = opts || {};
     const navHtml = NAV_ITEMS.map(n =>
-      `<a href="${n.href}" class="${n.key === pageKey ? 'on' : ''}">${n.label}</a>`).join('');
+      `<a href="${n.href}" class="${n.key === pageKey ? 'on' : ''}"${n.key === pageKey ? ' aria-current="page"' : ''}>${n.label}</a>`).join('');
 
     const header = document.createElement('header');
     header.className = 'topbar';
@@ -90,14 +95,14 @@ const Site = (() => {
           <div class="sub">平均股价(880003) · 中证2000增强 ⇄ 红利低波 · 方案C 慢速DIF(17/34)</div>
         </div>
       </a>
-      <nav class="mainnav" id="mainnav">${navHtml}</nav>
+      <nav class="mainnav" id="mainnav" aria-label="主导航">${navHtml}</nav>
       <div class="topbar-right">
         ${opts.statusPill === false ? '' : '<span class="status-pill" id="status">加载中…</span>'}
         ${opts.live ? '<span class="live-badge" id="liveBadge"></span>' : ''}
         <span class="updated" id="updated"></span>
-        ${opts.refresh ? '<button class="btn" id="refreshBtn" title="刷新数据">⟳</button>' : ''}
-        <button class="btn" id="themeBtn" title="切换主题">🌓</button>
-        <button class="btn nav-toggle" id="navToggle" title="菜单">☰</button>
+        ${opts.refresh ? '<button type="button" class="btn" id="refreshBtn" aria-label="刷新数据" title="刷新数据">⟳</button>' : ''}
+        <button type="button" class="btn" id="themeBtn" aria-label="切换主题" title="切换主题">🌓</button>
+        <button type="button" class="btn nav-toggle" id="navToggle" aria-label="打开导航菜单" aria-expanded="false" aria-controls="mainnav" title="菜单">☰</button>
       </div>`;
     document.body.prepend(header);
 
@@ -127,8 +132,19 @@ const Site = (() => {
     // 移动端菜单
     const toggle = document.getElementById('navToggle');
     const nav = document.getElementById('mainnav');
-    toggle.addEventListener('click', () => nav.classList.toggle('open'));
-    nav.addEventListener('click', e => { if (e.target.tagName === 'A') nav.classList.remove('open'); });
+    const setNavOpen = open => {
+      nav.classList.toggle('open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.setAttribute('aria-label', open ? '关闭导航菜单' : '打开导航菜单');
+    };
+    toggle.addEventListener('click', () => setNavOpen(!nav.classList.contains('open')));
+    nav.addEventListener('click', e => { if (e.target.tagName === 'A') setNavOpen(false); });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && nav.classList.contains('open')) {
+        setNavOpen(false);
+        toggle.focus();
+      }
+    });
   }
 
   // ---------- 数据加载（全站共享一份 Promise） ----------

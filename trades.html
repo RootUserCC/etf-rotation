@@ -5,13 +5,13 @@
 <title>交易明细 · ETF 轮动监控</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="ETF 轮动策略全部换仓台账：持仓段明细、信号记录、段收益分布与盈亏结构统计。">
-<script src="echarts.min.js"></script>
+<script defer src="echarts.min.js"></script>
 <link rel="stylesheet" href="assets/css/site.css">
 </head>
 <body>
 
 <div class="page">
-  <div class="page-err" id="err">数据加载失败：请先运行 export_json.py 生成 data.json，并通过本地服务或已发布站点访问（勿直接双击 html）。</div>
+  <div class="page-err" id="err" role="alert">数据加载失败：请先运行 export_json.py 生成 data.json，并通过本地服务或已发布站点访问（勿直接双击 html）。</div>
 
   <section class="doc-hero">
     <h2>交易明细</h2>
@@ -38,7 +38,7 @@
     <div class="card-head">
       <h2>持仓明细</h2>
       <span class="seg-toggle" id="legFilter">
-        <button class="on" data-f="all">全部</button><button data-f="1000">进攻仓</button><button data-f="div">红利低波</button>
+        <button type="button" class="on" data-f="all" aria-pressed="true">全部</button><button type="button" data-f="1000" aria-pressed="false">进攻仓</button><button type="button" data-f="div" aria-pressed="false">红利低波</button>
       </span>
       <span class="hint">最新在前 · 收益已含双边费用 · 累计收益为复利连乘：本行累计 = (1+上行累计) × (1+本行收益) − 1</span>
     </div>
@@ -69,7 +69,7 @@
   </div>
 </div>
 
-<script src="assets/js/common.js"></script>
-<script src="assets/js/trades.js"></script>
+<script defer src="assets/js/common.js"></script>
+<script defer src="assets/js/trades.js"></script>
 </body>
 </html>

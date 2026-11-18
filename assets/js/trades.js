@@ -10,12 +10,23 @@ document.getElementById('legFilter').addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
   legFilter = b.dataset.f;
-  for (const x of b.parentElement.children) x.classList.toggle('on', x === b);
+  for (const x of b.parentElement.children) {
+    const active = x === b;
+    x.classList.toggle('on', active);
+    x.setAttribute('aria-pressed', String(active));
+  }
   if (Site.lastData) renderTable(Site.lastData);
 });
 
 document.addEventListener('site:themechange', () => { if (Site.lastData) renderDist(Site.lastData); });
-window.addEventListener('resize', () => { if (distChart) distChart.resize(); });
+let resizeFrame = 0;
+window.addEventListener('resize', () => {
+  if (resizeFrame) return;
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = 0;
+    if (distChart) distChart.resize();
+  });
+});
 
 // ===== 盈亏结构 =====
 function renderLegStats(data) {

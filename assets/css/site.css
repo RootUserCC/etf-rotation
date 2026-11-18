@@ -13,7 +13,7 @@
   --border2: #35446a;
   --text: #e8ecf3;
   --muted: #8b95a8;
-  --faint: #5b6478;
+  --faint: #8b95a8;
   --up: #ff6b6b;        /* 涨 · 红（A股习惯） */
   --down: #3ddc97;      /* 跌 · 绿 */
   --accent: #4d7cfe;
@@ -36,7 +36,7 @@
   --border2: #cfd6e2;
   --text: #1d2733;
   --muted: #667080;
-  --faint: #9aa3b3;
+  --faint: #5f6979;
   --up: #d43f3a;
   --down: #2ca02c;
   --accent: #3b6df0;
@@ -50,6 +50,7 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 html { scroll-behavior: smooth; }
 body {
   font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
@@ -218,7 +219,7 @@ body::before {
 .mini-card input[type="number"], .mini-card input[type="date"] {
   border: 1px solid var(--border2); border-radius: 6px;
   background: var(--card2); color: var(--text);
-  font-size: 11px; font-family: inherit; outline: none; padding: 1px 4px;
+  font-size: 11px; font-family: inherit; padding: 1px 4px;
 }
 .kpi-card input[type="number"], .mini-card input[type="number"] { width: 46px; text-align: center; }
 .kpi-card input:focus, .mini-card input:focus { border-color: var(--accent); }
@@ -249,9 +250,11 @@ body::before {
   background: transparent; border: 1px solid var(--border);
   border-radius: 12px; padding: 10px 14px;
 }
-.mini-card .label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.mini-card .label { font-size: 11px; color: var(--muted); display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .mini-card .value { font-size: 18px; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
 .mini-card .sub { font-size: 10px; color: var(--faint); margin-top: 2px; }
+.kpi-card .sub, .mini-card .sub { overflow-wrap: anywhere; }
+.mini-card input[type="date"] { max-width: 100%; }
 
 /* ---------- 标签页 ---------- */
 .tabs {
@@ -280,9 +283,10 @@ body::before {
   transition: all 0.15s;
 }
 .seg-toggle button.on { background: var(--grad); color: #fff; }
+.seg-toggle button:focus-visible { outline-offset: -3px; }
 
 /* ---------- 图表容器 ---------- */
-.chart-xl { width: 100%; height: 62vh; min-height: 440px; padding: 0 6px; }
+.chart-xl { width: 100%; height: 62vh; height: 62dvh; min-height: 440px; padding: 0 6px; }
 .chart-lg { width: 100%; height: 340px; padding: 0 6px; }
 .chart-md { width: 100%; height: 260px; padding: 0 6px; }
 .chart-sm { width: 100%; height: 240px; padding: 0 6px; }
@@ -483,6 +487,11 @@ td.pos { color: var(--up); }
 .page-err { padding: 40px; text-align: center; color: var(--up); display: none; font-size: 14px; }
 .skel { color: var(--faint); font-size: 12px; padding: 30px; text-align: center; }
 
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
 /* ---------- 响应式 ---------- */
 @media (max-width: 900px) {
   .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -518,7 +527,7 @@ td.pos { color: var(--up); }
   .tabs button { flex: 1; padding: 7px 0; }
   .memo { margin: 8px 14px 0; font-size: 11px; }
   .card { margin: 12px; }
-  .chart-xl { height: 56vh; min-height: 320px; }
+  .chart-xl { height: 56vh; height: 56dvh; min-height: 320px; }
   .card-head { padding: 12px 14px 8px; }
   .card-head .hint { display: none; }
   .hero { margin: 12px; padding: 28px 20px 24px; }

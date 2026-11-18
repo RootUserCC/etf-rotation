@@ -5,13 +5,13 @@
 <title>监控仪表盘 · ETF 轮动监控</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="ETF 轮动策略实时监控：信号预警、走势总览、KPI 指标、收益与风险分析。">
-<script src="echarts.min.js"></script>
+<script defer src="echarts.min.js"></script>
 <link rel="stylesheet" href="assets/css/site.css">
 </head>
 <body>
 
 <div class="page">
-  <div class="page-err" id="err">数据加载失败：请先运行 export_json.py 生成 data.json，并通过本地服务或已发布站点访问（勿直接双击 html）。</div>
+  <div class="page-err" id="err" role="alert">数据加载失败：请先运行 export_json.py 生成 data.json，并通过本地服务或已发布站点访问（勿直接双击 html）。</div>
 
   <div class="sig-banner" id="sigBanner"></div>
 
@@ -21,16 +21,16 @@
     <div class="kpi-card"><span class="icon">📉</span><div class="label">最大回撤</div><div class="value down" id="kpiMDD">-</div><div class="sub" id="kpiMDDSub"></div></div>
     <div class="kpi-card"><span class="icon">📅</span><div class="label">今年收益</div><div class="value" id="kpiYTD">-</div><div class="sub" id="kpiYTDSub"></div></div>
     <div class="mini-card"><div class="label">当前回撤</div><div class="value down" id="kpiCurDD">-</div><div class="sub" id="kpiCurDDSub"></div></div>
-    <div class="mini-card"><div class="label">近 <input type="number" id="kpiDays" value="5" min="1" max="9999"> 日收益</div><div class="value" id="kpiCustom">-</div><div class="sub" id="kpiCustomSub"></div><div class="sub date-row">或自 <input type="date" id="kpiDate"> 起</div></div>
+    <div class="mini-card"><label class="label">近 <input type="number" id="kpiDays" value="5" min="1" max="9999"> 日收益</label><div class="value" id="kpiCustom">-</div><div class="sub" id="kpiCustomSub"></div><label class="sub date-row">或自 <input type="date" id="kpiDate"> 起</label></div>
     <div class="mini-card"><div class="label">超额收益</div><div class="value" id="kpiEx">-</div><div class="sub" id="kpiExSub"></div></div>
     <div class="mini-card"><div class="label">信号状态</div><div class="value" id="kpiSig" style="font-size:16px;white-space:nowrap">-</div><div class="sub" id="kpiSigSub"></div></div>
     <div class="mini-card hide-sm"><div class="label">最近更新</div><div class="value" id="kpiUpd" style="font-size:13px;white-space:nowrap">-</div><div class="sub" id="kpiUpdSub"></div></div>
   </div>
 
   <div class="tabs" id="tabBar">
-    <button class="on" data-tab="overview">概览</button>
-    <button data-tab="returns">收益</button>
-    <button data-tab="risk">风险</button>
+    <button type="button" class="on" data-tab="overview" aria-pressed="true">概览</button>
+    <button type="button" data-tab="returns" aria-pressed="false">收益</button>
+    <button type="button" data-tab="risk" aria-pressed="false">风险</button>
   </div>
 
   <div class="memo" id="strategyMemo"></div>
@@ -40,7 +40,7 @@
       <div class="card-head">
         <h2>走势总览</h2>
         <span class="seg-toggle" id="klineToggle">
-          <button class="on" data-mode="line">折线</button><button data-mode="k">K线</button>
+          <button type="button" class="on" data-mode="line" aria-pressed="true">折线</button><button type="button" data-mode="k" aria-pressed="false">K线</button>
         </span>
         <span class="hint">▲=买入进攻仓　▼=卖出进攻仓（换入红利低波）　底纹=持仓区间（红=进攻仓 / 绿=红利低波），段收益见<a href="trades.html" style="color:var(--accent)">交易明细</a> · 拖动下方滑块缩放　｜　口径：进攻仓 2024-06-28 起为中证2000增强ETF(159552)，此前为中证1000ETF(512100)</span>
       </div>
@@ -105,7 +105,7 @@
   </section>
 </div>
 
-<script src="assets/js/common.js"></script>
-<script src="assets/js/dashboard.js"></script>
+<script defer src="assets/js/common.js"></script>
+<script defer src="assets/js/dashboard.js"></script>
 </body>
 </html>
