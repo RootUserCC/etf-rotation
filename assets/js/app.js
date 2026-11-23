@@ -587,15 +587,15 @@
       legend: {
         data: ['平均股价(左轴)', '中证2000增强ETF(右轴)', '红利低波ETF(右轴)', 'DIF', 'DEA'],
         top: 6,
-        left: narrow ? 8 : 56,
+        left: 'center',
         type: narrow ? 'scroll' : 'plain',
         itemWidth: 14, itemHeight: 8,
         textStyle: { color: T.muted, fontSize: narrow ? 10.5 : 12 }
       },
       axisPointer: { link: [{ xAxisIndex: 'all' }] },
       grid: [
-        { left: narrow ? 42 : 58, right: narrow ? 42 : 58, top: 38, height: '48%' },
-        { left: narrow ? 42 : 58, right: narrow ? 42 : 58, top: '60%', height: '29%' }
+        { left: narrow ? 42 : 58, right: narrow ? 42 : 58, top: 46, height: '46%' },
+        { left: narrow ? 42 : 58, right: narrow ? 42 : 58, top: '61%', height: '28%' }
       ],
       xAxis: [
         {
@@ -710,9 +710,9 @@
       },
       legend: {
         data: ['轮动策略', '进攻仓持有(拼接)', '红利低波持有'],
-        top: 6, left: 54, textStyle: { color: T.muted, fontSize: 12 }, itemWidth: 14, itemHeight: 8
+        top: 6, left: 'center', textStyle: { color: T.muted, fontSize: 12 }, itemWidth: 14, itemHeight: 8
       },
-      grid: { left: 54, right: 24, top: 38, bottom: 48 },
+      grid: { left: 54, right: 24, top: 46, bottom: 48 },
       xAxis: {
         type: 'category', data: D, boundaryGap: false,
         axisLine: { lineStyle: { color: T.axisLine } },

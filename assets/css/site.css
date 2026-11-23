@@ -361,6 +361,7 @@ body {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+  min-width: 0;
 }
 .card-head {
   display: flex;
@@ -815,11 +816,12 @@ tbody tr.buy td:first-child { box-shadow: inset 3px 0 0 var(--up); }
 tbody tr.sell td:first-child { box-shadow: inset 3px 0 0 var(--down); }
 
 /* 月度收益热力表 */
+.ret-table { font-size: 12px; }
 .ret-table th,
 .ret-table td {
   text-align: center;
-  padding: 7px 6px;
-  min-width: 68px;
+  padding: 6px 4px;
+  min-width: 58px;
 }
 .ret-table td.year,
 .ret-table th:first-child {
@@ -828,7 +830,7 @@ tbody tr.sell td:first-child { box-shadow: inset 3px 0 0 var(--down); }
   z-index: 1;
   background: var(--surface-2);
   font-weight: 700;
-  min-width: 58px;
+  min-width: 52px;
   text-align: center;
   border-right: 1px solid var(--border);
 }
@@ -838,11 +840,12 @@ tbody tr.sell td:first-child { box-shadow: inset 3px 0 0 var(--down); }
 .ret-table .brk {
   display: flex;
   justify-content: center;
-  gap: 5px;
-  font-size: 10px;
+  gap: 3px;
+  font-size: 9.5px;
   font-weight: 400;
   color: var(--text-3);
   margin-top: 2px;
+  letter-spacing: -0.02em;
 }
 .ret-table .brk .neg { color: var(--down-text); }
 .ret-table .brk .pos { color: var(--up-text); }
@@ -1045,15 +1048,18 @@ tbody tr.sell td:first-child { box-shadow: inset 3px 0 0 var(--down); }
 }
 
 @media (max-width: 640px) {
-  .topbar-inner { padding: 0 12px; gap: 10px; }
-  .brand-tag, .freshness-chip .ftext-long { display: none; }
+  .topbar-inner { padding: 0 12px; gap: 6px; }
+  .brand-title { font-size: 14px; }
+  .brand-tag, .freshness-chip, .live-chip { display: none !important; }
+  .icon-btn { width: 30px; height: 30px; }
   .container { padding: 12px 12px 40px; gap: 16px; }
+  .kpi-grid { grid-template-columns: 1fr; }
   .pos-top { flex-direction: column; gap: 10px; }
   .pos-ret-box { text-align: left; }
   .pos-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sig-metrics { grid-template-columns: 1fr; }
   .kpi-val { font-size: 22px; }
-  .kpi-secondary .kpi-val { font-size: 18px; }
+  .kpi-secondary .kpi-val { font-size: 19px; }
   .stat-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .chart-xl { height: 440px; }
   .chart-lg { height: 300px; }
@@ -1061,6 +1067,7 @@ tbody tr.sell td:first-child { box-shadow: inset 3px 0 0 var(--down); }
   .card-head { padding: 11px 14px; }
   .card-body { padding: 14px; }
   .chart-legend-strip { padding: 8px 14px; }
+  .seg button { padding: 4px 7px; font-size: 11.5px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
