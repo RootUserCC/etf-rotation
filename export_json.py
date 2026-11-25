@@ -22,6 +22,7 @@ if sys.platform == 'win32' and not getattr(sys.stdout, '_utf8_wrapped', False):
     sys.stdout._utf8_wrapped = True
 
 from backtest import run_backtest, calc_signals
+import market_data as md
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE, 'data')
@@ -273,8 +274,9 @@ def main():
         print('  (无 etf_159201_hfq.csv，跳过防守择优输出)')
 
     st = _status()
-    avg_stale = bool(st.get('avg_stale') or
-                     avg.index[-1] < max(etfdiv.index[-1], etf_atk.index[-1]))
+    etf_last = max(md.completed_daily(etfdiv).index[-1],
+                   md.completed_daily(etf_atk).index[-1])
+    avg_stale = bool(st.get('avg_stale') or avg.index[-1] < etf_last)
     out = {
         'dates': dates,
         'avg': series(avg),

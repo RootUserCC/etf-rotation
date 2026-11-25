@@ -2,122 +2,544 @@
 <html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<title>ETF 轮动监控 · 平均股价(880003) DIF 拐点量化轮动</title>
+<title>ETF 轮动监控终端 · 平均股价(880003) DIF 拐点策略</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="基于通达信平均股价指数 MACD-DIF 拐点信号的 ETF 量化轮动研究：中证2000增强ETF 与 红利低波ETF 双仓轮动，十年回测、每日信号监控。">
-<script src="echarts.min.js"></script>
+<meta name="description" content="基于通达信平均股价(880003) MACD-DIF(17/34) 拐点信号的 ETF 量化轮动单页终端：实时持仓、走势信号、净值曲线、收益热力表、风险诊断与完整交易台账。">
+<script>
+  try {
+    var t = localStorage.getItem('etf-site-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
 <link rel="stylesheet" href="assets/css/site.css">
+<script defer src="echarts.min.js"></script>
 </head>
 <body>
 
-<div class="page">
+<!-- 顶部固定命令栏 -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#overview">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 17 9 11 13 15 21 7"></polyline>
+          <polyline points="16 7 21 7 21 12"></polyline>
+        </svg>
+      </span>
+      <div>
+        <div class="brand-title">ETF 轮动监控</div>
+        <div class="brand-tag">880003 · DIF(17/34)</div>
+      </div>
+    </a>
 
-  <!-- Hero -->
-  <section class="hero">
-    <span class="kicker">⚡ 量化轮动研究 · 每日收盘自动更新</span>
-    <h2>用<span class="grad-text">平均股价</span>的拐点，<br>驱动进攻与防守的仓位切换</h2>
-    <p class="lead">
-      以通达信全市场「平均股价」指数（880003）的 MACD-DIF(17/34) 拐点为唯一信号：
-      零下拐头向上 → 满仓进攻仓（中证2000增强ETF 159552）；拐头向下 → 满仓防守仓（红利低波ETF 512890）。
-      信号 T 日收盘确认，T+1 开盘价成交，全程无主观干预。
-    </p>
-    <div class="hero-cta">
-      <a class="cta-btn primary" href="dashboard.html">进入监控仪表盘 →</a>
-      <a class="cta-btn ghost" href="strategy.html">了解策略原理</a>
+    <nav class="anchor-nav" id="anchorNav" aria-label="页面分区导航">
+      <a href="#overview" class="on">总览</a>
+      <a href="#market">走势信号</a>
+      <a href="#performance">净值收益</a>
+      <a href="#risk">风控诊断</a>
+      <a href="#ledger">交易台账</a>
+      <a href="#methodology">策略说明</a>
+    </nav>
+
+    <div class="topbar-right">
+      <span class="live-chip" id="liveChip"></span>
+      <span class="freshness-chip" id="freshnessChip" title="数据更新时间">
+        <span class="fdot"></span>
+        <span id="updatedText">加载中…</span>
+      </span>
+      <button type="button" class="icon-btn" id="refreshBtn" aria-label="刷新数据" title="刷新行情数据">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+          <polyline points="21 3 21 9 15 9"></polyline>
+        </svg>
+      </button>
+      <button type="button" class="icon-btn" id="themeBtn" aria-label="切换主题" title="切换深浅主题">
+        <svg id="themeIconSun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+        </svg>
+        <svg id="themeIconMoon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      </button>
+      <button type="button" class="icon-btn nav-toggle" id="navToggle" aria-label="展开导航" aria-expanded="false" aria-controls="anchorNav">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="7" x2="20" y2="7"></line>
+          <line x1="4" y1="12" x2="20" y2="12"></line>
+          <line x1="4" y1="17" x2="20" y2="17"></line>
+        </svg>
+      </button>
     </div>
-    <div class="hero-stats" id="heroStats">
-      <div class="hero-stat"><div class="k">累计收益</div><div class="v" id="hsCum">-</div><div class="s" id="hsCumSub"></div></div>
-      <div class="hero-stat"><div class="k">年化收益</div><div class="v" id="hsAnn">-</div><div class="s" id="hsAnnSub"></div></div>
-      <div class="hero-stat"><div class="k">最大回撤</div><div class="v" id="hsMdd">-</div><div class="s" id="hsMddSub"></div></div>
-      <div class="hero-stat"><div class="k">换仓次数</div><div class="v" id="hsTrades">-</div><div class="s" id="hsTradesSub"></div></div>
-      <div class="hero-stat"><div class="k">当前持仓</div><div class="v" id="hsHold">-</div><div class="s" id="hsHoldSub"></div></div>
+  </div>
+</header>
+
+<main class="container">
+  <div class="page-err" id="err" role="alert">
+    数据加载失败：请先运行 export_json.py 生成 data.json，并通过本地服务或已发布站点访问（勿直接双击 HTML 文件）。
+  </div>
+
+  <!-- ========================================================
+       01 · 实时状态与核心指标
+       ======================================================== -->
+  <section class="section" id="overview">
+    <div class="sig-banner" id="sigBanner" role="status"></div>
+
+    <!-- 当前持仓 + 信号监测 双卡 -->
+    <div class="status-grid">
+      <div class="card pos-card" id="posCard">
+        <div class="pos-top">
+          <div>
+            <div class="pos-badges">
+              <span class="badge badge-neutral" id="posRoleBadge">加载中</span>
+              <span class="badge badge-neutral" id="posModeBadge">方案C · 慢速DIF</span>
+            </div>
+            <div class="pos-name">
+              <span id="posAssetName">--</span>
+              <span class="pos-code" id="posAssetCode"></span>
+            </div>
+          </div>
+          <div class="pos-ret-box">
+            <div class="pos-ret-label">本段浮动收益</div>
+            <div class="pos-ret-val" id="posFloatRet">--</div>
+          </div>
+        </div>
+        <div class="pos-meta">
+          <div class="meta-kv"><div class="mk">建仓日期</div><div class="mv" id="posBuyDate">--</div></div>
+          <div class="meta-kv"><div class="mk">成本 → 最新</div><div class="mv" id="posPrices">--</div></div>
+          <div class="meta-kv"><div class="mk">持有交易日</div><div class="mv" id="posDays">--</div></div>
+          <div class="meta-kv"><div class="mk">策略最新净值</div><div class="mv" id="posNav">--</div></div>
+        </div>
+      </div>
+
+      <div class="card sig-card">
+        <div class="sig-metrics">
+          <div class="sig-box">
+            <div class="sk"><span>平均股价</span><span class="mono">880003</span></div>
+            <div class="sv" id="sigAvgVal">--</div>
+            <div class="ss mono" id="sigAvgSub">--</div>
+          </div>
+          <div class="sig-box">
+            <div class="sk"><span>DIF (17/34)</span><span id="sigDifZone">--</span></div>
+            <div class="sv" id="sigDifVal">--</div>
+            <div class="ss" id="sigDifSub">--</div>
+          </div>
+          <div class="sig-box">
+            <div class="sk"><span>DEA / 柱体</span><span id="sigBarTag">--</span></div>
+            <div class="sv" id="sigDeaVal">--</div>
+            <div class="ss" id="sigHintSub">--</div>
+          </div>
+        </div>
+        <div class="defense-strip">
+          <div class="defense-left" id="lastTradeSummary">上次换仓 --</div>
+          <div class="defense-right" id="defensePickSummary"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 核心 KPI 第一行（4主指标） -->
+    <div class="kpi-grid">
+      <div class="kpi kpi-primary">
+        <div class="kpi-top"><span class="kpi-label">累计收益</span><span class="kpi-tag" id="kpiCumTag">含双边万1</span></div>
+        <div class="kpi-val" id="kpiCum">--</div>
+        <div class="kpi-sub mono" id="kpiCumSub">--</div>
+      </div>
+      <div class="kpi kpi-primary">
+        <div class="kpi-top"><span class="kpi-label">年化收益 (CAGR)</span><span class="kpi-tag" id="kpiCalmarTag">Calmar --</span></div>
+        <div class="kpi-val" id="kpiAnn">--</div>
+        <div class="kpi-sub" id="kpiAnnSub">--</div>
+      </div>
+      <div class="kpi kpi-primary">
+        <div class="kpi-top"><span class="kpi-label">最大回撤</span><span class="kpi-tag" id="kpiUwTag">最长水下 --</span></div>
+        <div class="kpi-val down" id="kpiMDD">--</div>
+        <div class="kpi-sub" id="kpiMDDSub">--</div>
+      </div>
+      <div class="kpi kpi-primary">
+        <div class="kpi-top"><span class="kpi-label">今年以来 (YTD)</span><span class="kpi-tag" id="kpiYtdYear">--</span></div>
+        <div class="kpi-val" id="kpiYTD">--</div>
+        <div class="kpi-sub mono" id="kpiYTDSub">--</div>
+      </div>
+    </div>
+
+    <!-- 核心 KPI 第二行（4运营/交互指标） -->
+    <div class="kpi-grid">
+      <div class="kpi kpi-secondary">
+        <div class="kpi-top"><span class="kpi-label">当前回撤</span><span class="kpi-tag">距历史新高</span></div>
+        <div class="kpi-val" id="kpiCurDD">--</div>
+        <div class="kpi-sub" id="kpiCurDDSub">--</div>
+      </div>
+      <div class="kpi kpi-secondary">
+        <div class="kpi-top"><span class="kpi-label">年化超额收益</span><span class="kpi-tag">vs 中证1000持有</span></div>
+        <div class="kpi-val" id="kpiEx">--</div>
+        <div class="kpi-sub" id="kpiExSub">--</div>
+      </div>
+      <div class="kpi kpi-secondary">
+        <div class="kpi-top"><span class="kpi-label">段胜率 / 盈亏比</span><span class="kpi-tag" id="kpiTradesTag">--</span></div>
+        <div class="kpi-val" id="kpiWinRatio">--</div>
+        <div class="kpi-sub" id="kpiWinSub">--</div>
+      </div>
+      <div class="kpi kpi-secondary">
+        <div class="custom-range-head">
+          <span class="kpi-label">区间收益测算</span>
+          <span class="quick-days" id="quickDays">
+            <button type="button" class="on" data-d="5">5日</button>
+            <button type="button" data-d="20">20日</button>
+            <button type="button" data-d="60">60日</button>
+            <button type="button" data-d="250">1年</button>
+          </span>
+        </div>
+        <div class="kpi-val" id="kpiCustom">--</div>
+        <div class="custom-inputs">
+          <span>近</span>
+          <input type="number" id="kpiDays" value="5" min="1" max="9999" aria-label="交易日数">
+          <span>日 · 或自</span>
+          <input type="date" id="kpiDate" aria-label="起始日期">
+        </div>
+      </div>
     </div>
   </section>
 
-  <div class="sig-banner" id="sigBanner"></div>
+  <!-- ========================================================
+       02 · 走势总览与 MACD 拐点信号
+       ======================================================== -->
+  <section class="section" id="market">
+    <div class="section-bar">
+      <h2><span class="sec-idx">01</span>走势总览与信号监控</h2>
+      <span class="sec-note">平均股价(左轴) + 轮动标的(右轴) + MACD(17/34/9) · 滚轮或底部滑块缩放</span>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title-group">
+          <h3>市场价格与 DIF 拐点</h3>
+          <span class="card-sub">2024-06-28 起进攻仓由中证1000(512100)切换为中证2000增强(159552)</span>
+        </div>
+        <div class="card-tools">
+          <div class="seg" id="marketRange">
+            <button type="button" data-days="65">近3月</button>
+            <button type="button" data-days="130">近6月</button>
+            <button type="button" class="on" data-days="250">近1年</button>
+            <button type="button" data-days="750">近3年</button>
+            <button type="button" data-days="0">全部</button>
+          </div>
+          <div class="seg" id="klineToggle">
+            <button type="button" class="on" data-mode="line" aria-pressed="true">折线</button>
+            <button type="button" data-mode="k" aria-pressed="false">K线</button>
+          </div>
+        </div>
+      </div>
+      <div class="chart-legend-strip">
+        <div class="legend-items">
+          <span class="legend-item"><span class="swatch atk-area"></span>进攻仓持仓区间</span>
+          <span class="legend-item"><span class="swatch div-area"></span>防守仓持仓区间</span>
+          <span class="legend-item"><span class="up">▲</span>买入进攻仓</span>
+          <span class="legend-item"><span class="down">▼</span>切换防守仓</span>
+        </div>
+        <span class="faint">T 日收盘确认信号 · T+1 开盘价成交</span>
+      </div>
+      <div id="marketChart" class="chart-xl"><div class="skel">加载走势图表…</div></div>
+    </div>
+  </section>
 
-  <!-- 净值曲线 -->
-  <h3 class="section-title">策略净值曲线</h3>
-  <div class="section-sub">轮动策略 vs 进攻仓持有 vs 红利低波持有（后复权口径，含双边万1佣金）· 拖动滑块缩放</div>
-  <div class="card">
-    <div id="navChart" class="chart-lg"><div class="skel">加载净值数据…</div></div>
-  </div>
+  <!-- ========================================================
+       03 · 净值表现与周期收益热力表
+       ======================================================== -->
+  <section class="section" id="performance">
+    <div class="section-bar">
+      <h2><span class="sec-idx">02</span>净值曲线与月度收益</h2>
+      <span class="sec-note">后复权真实成交口径（含双边万1佣金）</span>
+    </div>
 
-  <!-- 策略特性 -->
-  <h3 class="section-title">策略框架</h3>
-  <div class="feature-grid">
-    <div class="feature-card">
-      <div class="ficon">📡</div>
-      <h3>单一信号源</h3>
-      <p>全市场平均股价的 DIF 拐点反映整体赚钱效应的转向，比单一指数更难被权重结构扭曲。参数 17/34 经 1152 组网格寻优，邻域参数表现接近，非孤立尖峰。</p>
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title-group">
+          <h3>策略净值对比</h3>
+          <span class="card-sub">轮动策略 vs 进攻仓持有(拼接) vs 红利低波持有</span>
+        </div>
+        <div class="card-tools">
+          <div class="seg" id="navRange">
+            <button type="button" data-days="250">近1年</button>
+            <button type="button" data-days="750">近3年</button>
+            <button type="button" class="on" data-days="0">全部</button>
+          </div>
+          <div class="seg" id="navScaleToggle">
+            <button type="button" class="on" data-scale="linear">线性</button>
+            <button type="button" data-scale="log">对数</button>
+          </div>
+        </div>
+      </div>
+      <div id="navChart" class="chart-lg"><div class="skel">加载净值曲线…</div></div>
     </div>
-    <div class="feature-card">
-      <div class="ficon">⚔️</div>
-      <h3>进攻仓 · 中证2000增强</h3>
-      <p>DIF 零下拐头向上时满仓 159552。增强策略相对中证2000 指数的超额 alpha 是收益的主要来源，择时负责规避系统性下跌段。</p>
-    </div>
-    <div class="feature-card">
-      <div class="ficon">🛡️</div>
-      <h3>防守仓 · 红利低波</h3>
-      <p>DIF 拐头向下时切换至 512890。低波动筛选使行业更分散、防守属性更纯，等待期间仍可获得股息与低波收益，而非空置现金。</p>
-    </div>
-    <div class="feature-card">
-      <div class="ficon">⏱️</div>
-      <h3>纪律化执行</h3>
-      <p>信号 T 日收盘确认，T+1 开盘价机械成交，双边万1佣金已计入回测。盘中预览模块给出 DIF 翻转所需的临界涨跌幅，提前预判次日操作。</p>
-    </div>
-  </div>
 
-  <!-- 三方案对比 -->
-  <h3 class="section-title">方案演进</h3>
-  <div class="section-sub">十年回测（2016-11 ~ 2026-08，防守仓 510880 历史口径）· 当前线上方案为 C</div>
-  <div class="card">
-    <div class="card-body doc-block" style="padding-top:14px">
-      <div class="doc-table">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title-group">
+          <h3 id="retCardTitle">月度 / 年度收益热力表</h3>
+          <span class="card-sub" id="retCardSub">小字为当期 进攻 / 防守 乘积贡献（切换日归入新仓位）</span>
+        </div>
+        <div class="card-tools">
+          <div class="seg" id="retViewToggle">
+            <button type="button" class="on" data-view="strat">策略收益</button>
+            <button type="button" data-view="asset">进攻 / 防守基准</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap no-max">
+        <table class="ret-table" id="retTable"></table>
+        <table class="ret-table" id="assetRetTable" style="display:none"></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================
+       04 · 风险控制与统计诊断
+       ======================================================== -->
+  <section class="section" id="risk">
+    <div class="section-bar">
+      <h2><span class="sec-idx">03</span>风险控制与统计诊断</h2>
+      <span class="sec-note">回撤深度、250日滚动超额、日收益分布与持仓段盈亏结构</span>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title-group">
+            <h3>历史回撤曲线</h3>
+            <span class="card-sub" id="ddStats">--</span>
+          </div>
+        </div>
+        <div id="ddChart" class="chart-md"><div class="skel">加载回撤曲线…</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title-group">
+            <h3>滚动 250 日超额收益</h3>
+            <span class="card-sub">持续位于零轴上方表示择时有效</span>
+          </div>
+        </div>
+        <div id="rollChart" class="chart-md"><div class="skel">加载滚动指标…</div></div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title-group">
+            <h3>每日策略收益</h3>
+            <span class="card-sub" id="dailyStats">--</span>
+          </div>
+        </div>
+        <div id="dailyChart" class="chart-md"><div class="skel">加载日收益分布…</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title-group">
+            <h3>持仓段收益分布</h3>
+            <span class="card-sub">已了结单段收益直方图（红=盈利段 · 绿=亏损段）</span>
+          </div>
+        </div>
+        <div id="distChart" class="chart-md"><div class="skel">加载段分布…</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title-group">
+          <h3>持仓段盈亏结构</h3>
+          <span class="card-sub">按"笔"统计（一次完整买入 → 卖出为一段，已含双边费用）</span>
+        </div>
+      </div>
+      <div class="stat-matrix" id="legStats"></div>
+    </div>
+  </section>
+
+  <!-- ========================================================
+       05 · 交易台账与信号记录
+       ======================================================== -->
+  <section class="section" id="ledger">
+    <div class="section-bar">
+      <h2><span class="sec-idx">04</span>交易台账与信号记录</h2>
+      <span class="sec-note">最新在前 · 买卖价格为真实不复权价 · 收益按后复权计算并含双边万1佣金</span>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-tools">
+          <div class="seg" id="ledgerModeToggle">
+            <button type="button" class="on" data-mode="legs">持仓明细 <span class="mono faint" id="legsCount"></span></button>
+            <button type="button" data-mode="signals">信号记录 <span class="mono faint" id="sigsCount"></span></button>
+          </div>
+        </div>
+        <div class="card-tools">
+          <div class="seg" id="legFilter">
+            <button type="button" class="on" data-f="all">全部</button>
+            <button type="button" data-f="1000">进攻仓</button>
+            <button type="button" data-f="div">防守仓</button>
+          </div>
+          <select class="select-ctrl" id="ledgerYear" aria-label="按年份筛选">
+            <option value="all">全部年份</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap" id="legsWrap">
         <table>
-          <thead><tr><th>方案</th><th>信号规则</th><th>累计收益</th><th>年化</th><th>最大回撤</th><th>换仓次数</th><th>状态</th></tr></thead>
-          <tbody>
-            <tr><td><b>C 慢速拐点</b></td><td>DIF(17/34) 对称拐点</td><td class="pos">391.0%</td><td class="pos">17.71%</td><td class="neg">-28.4%</td><td>175</td><td><span class="tag buy">线上运行</span></td></tr>
-            <tr><td>B 对称信号</td><td>DIF(12/26) 对称拐点</td><td class="pos">209.98%</td><td class="pos">12.29%</td><td class="neg">-28.28%</td><td>219</td><td><span class="tag">历史方案</span></td></tr>
-            <tr><td>A 原版</td><td>DIF(12/26) 零下不卖</td><td class="pos">70.35%</td><td class="pos">5.61%</td><td class="neg">-42.79%</td><td>63</td><td><span class="tag">历史方案</span></td></tr>
-            <tr><td>中证1000ETF 持有</td><td>买入持有基准</td><td class="pos">16.98%</td><td class="pos">1.62%</td><td class="neg">-50.97%</td><td>-</td><td><span class="tag sell">基准</span></td></tr>
-            <tr><td>红利ETF 持有</td><td>买入持有基准</td><td class="pos">88.98%</td><td class="pos">6.74%</td><td class="neg">-23.40%</td><td>-</td><td><span class="tag sell">基准</span></td></tr>
-          </tbody>
+          <thead>
+            <tr>
+              <th>持仓标的</th>
+              <th>买入日期</th>
+              <th>买入价</th>
+              <th>卖出日期</th>
+              <th>卖出价</th>
+              <th>持有交易日</th>
+              <th>段收益</th>
+              <th>累计复利</th>
+            </tr>
+          </thead>
+          <tbody id="legsTbody"></tbody>
         </table>
       </div>
-      <p style="margin-top:8px">完整方案推导与参数寻优过程见 <a href="strategy.html" style="color:var(--accent)">策略研究</a> 页。</p>
+
+      <div class="table-wrap" id="sigsWrap" style="display:none">
+        <table>
+          <thead>
+            <tr>
+              <th>信号方向</th>
+              <th>信号日 (T)</th>
+              <th>成交日 (T+1)</th>
+              <th style="text-align:left">换仓操作</th>
+              <th>买入成交价</th>
+              <th>信号日 DIF</th>
+              <th>了结段收益</th>
+            </tr>
+          </thead>
+          <tbody id="sigsTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================
+       06 · 策略框架、研究对照与运行状态
+       ======================================================== -->
+  <section class="section" id="methodology">
+    <div class="section-bar">
+      <h2><span class="sec-idx">05</span>策略原理与系统状态</h2>
+      <span class="sec-note">方案C 慢速 DIF(17/34) 完整口径与本地管道健康度</span>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <h3>核心规则框架</h3>
+        </div>
+        <div class="card-body">
+          <div class="rules-grid">
+            <div class="rule-item">
+              <div class="rule-head"><span class="rule-num">01</span><h4>唯一信号源 · 平均股价 880003</h4></div>
+              <p>全市场等权平均股价的 MACD-DIF(17/34) 反映整体赚钱效应转向，不受权重股结构扭曲。参数经 1152 组网格寻优，邻域表现平稳。</p>
+            </div>
+            <div class="rule-item">
+              <div class="rule-head"><span class="rule-num">02</span><h4>对称拐点规则</h4></div>
+              <p><b class="up">买入进攻</b>：DIF 零轴下方拐头向上。<br><b class="down">切换防守</b>：DIF 任意位置拐头向下。DEA 不参与拐点判断。</p>
+            </div>
+            <div class="rule-item">
+              <div class="rule-head"><span class="rule-num">03</span><h4>双腿标的轮动</h4></div>
+              <p>进攻腿满仓中证2000增强ETF（159552，2024-06-28前拼接 512100）；防守腿满仓红利低波ETF（512890），并辅助监控 512890 / 159201 20日动量择优。</p>
+            </div>
+            <div class="rule-item">
+              <div class="rule-head"><span class="rule-num">04</span><h4>纪律化成交口径</h4></div>
+              <p>信号于 T 日收盘确认，T+1 日开盘价机械换仓。全部回测与台账按通达信除权除息自行后复权计算，并扣除双边万1佣金。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="system">
+        <div class="card-head">
+          <h3>系统运行状态与数据通道</h3>
+        </div>
+        <div class="card-body">
+          <div class="sys-list" id="runtimeInfo">
+            <div class="sys-row"><span class="sk">数据截至日期</span><span class="sv mono" id="sysLastDate">--</span></div>
+            <div class="sys-row"><span class="sk">最近导出时间</span><span class="sv mono" id="sysUpdated">--</span></div>
+            <div class="sys-row"><span class="sk">平均股价通道</span><span class="sv mono" id="sysSource">--</span></div>
+            <div class="sys-row"><span class="sk">回测样本长度</span><span class="sv mono" id="sysLen">--</span></div>
+            <div class="sys-row"><span class="sk">数据通道状态</span><span class="sv" id="sysHealth">--</span></div>
+            <div class="sys-row"><span class="sk">自动更新机制</span><span class="sv">工作日 15:10 自动拉取并同步静态站 · 盘中 5s 轮询 live.json</span></div>
+            <div class="sys-row"><span class="sk">数据源通道</span><span class="sv">pytdx 通达信主通道（东财 / 腾讯自动降级）</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 历史回测对照（默认折叠，一键展开） -->
+    <details class="ref-accordion">
+      <summary>
+        <span>历史回测与标的切换研究对照（方案 A/B/C 十年对比 · 进攻腿切换 · 防守腿切换）</span>
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </summary>
+      <div class="ref-body">
+        <div class="ref-grid">
+          <div class="ref-box">
+            <div class="ref-box-title">方案对比（2016-11 ~ 2026-08 · 510880口径）</div>
+            <table>
+              <thead><tr><th>方案</th><th>累计</th><th>年化</th><th>回撤</th><th>换仓</th></tr></thead>
+              <tbody>
+                <tr><td class="text-col"><b>C 慢速拐点(17/34)</b></td><td class="pos">391.0%</td><td class="pos">17.7%</td><td class="neg">-28.4%</td><td>175</td></tr>
+                <tr><td class="text-col">B 对称信号(12/26)</td><td class="pos">210.0%</td><td class="pos">12.3%</td><td class="neg">-28.3%</td><td>219</td></tr>
+                <tr><td class="text-col">A 原版(零下不卖)</td><td class="pos">70.4%</td><td class="pos">5.6%</td><td class="neg">-42.8%</td><td>63</td></tr>
+                <tr><td class="text-col">中证1000 持有</td><td class="pos">17.0%</td><td class="pos">1.6%</td><td class="neg">-51.0%</td><td>-</td></tr>
+                <tr><td class="text-col">红利ETF 持有</td><td class="pos">89.0%</td><td class="pos">6.7%</td><td class="neg">-23.4%</td><td>-</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="ref-box">
+            <div class="ref-box-title">进攻腿对比（2024-06-28 起 · 方案C）</div>
+            <table>
+              <thead><tr><th>进攻标的</th><th>累计</th><th>年化</th><th>最大回撤</th></tr></thead>
+              <tbody>
+                <tr><td class="text-col"><b>159552 中证2000增强</b></td><td class="pos">140.5%</td><td class="pos">50.8%</td><td class="neg">-16.2%</td></tr>
+                <tr><td class="text-col">563300 中证2000ETF</td><td class="pos">118.8%</td><td class="pos">44.3%</td><td class="neg">-16.8%</td></tr>
+                <tr><td class="text-col">512100 中证1000ETF</td><td class="pos">113.8%</td><td class="pos">42.7%</td><td class="neg">-17.7%</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="ref-box">
+            <div class="ref-box-title">防守腿对比（2019-01 ~ 2026-08 · 方案C）</div>
+            <table>
+              <thead><tr><th>轮动组合</th><th>累计</th><th>年化</th><th>回撤</th></tr></thead>
+              <tbody>
+                <tr><td class="text-col"><b>512100 + 512890 红利低波</b></td><td class="pos">523.3%</td><td class="pos">27.4%</td><td class="neg">-20.2%</td></tr>
+                <tr><td class="text-col">512100 + 510880 上证红利</td><td class="pos">386.3%</td><td class="pos">23.3%</td><td class="neg">-20.3%</td></tr>
+                <tr><td class="text-col">512890 买入持有</td><td class="pos">130.9%</td><td class="pos">11.7%</td><td class="neg">-16.5%</td></tr>
+                <tr><td class="text-col">510880 买入持有</td><td class="pos">76.4%</td><td class="pos">7.8%</td><td class="neg">-20.3%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="ref-note">
+          研究风险提示：方案C 参数 (17/34) 系在历史区间内网格寻优所得，存在一定过拟合风险；2024-06-28 后 159552 的超额主要来自中证2000增强自身的 alpha，样本窗口尚短，仅作跟踪研究参考。
+        </div>
+      </div>
+    </details>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div>免责声明：本站仅为个人量化研究监控原型，所有回测、信号与台账均不构成任何投资建议。市场有风险，投资需谨慎。</div>
+    <div class="footer-links">
+      <span class="mono" id="footerMeta">--</span>
+      <a href="#overview">回到顶部 ↑</a>
     </div>
   </div>
+</footer>
 
-  <!-- 入口卡片 -->
-  <h3 class="section-title">站内导航</h3>
-  <div class="feature-grid" style="margin-bottom:8px">
-    <a class="feature-card" href="dashboard.html" style="text-decoration:none;color:inherit">
-      <div class="ficon">📊</div>
-      <h3>监控仪表盘</h3>
-      <p>实时信号横幅、走势总览（折线/K线）、KPI 指标、月度收益热力表、回撤与滚动超额。</p>
-    </a>
-    <a class="feature-card" href="trades.html" style="text-decoration:none;color:inherit">
-      <div class="ficon">📒</div>
-      <h3>交易明细</h3>
-      <p>每一笔换仓的完整台账：买卖日期、价格、段收益、累计复利，以及段胜率/盈亏比统计。</p>
-    </a>
-    <a class="feature-card" href="strategy.html" style="text-decoration:none;color:inherit">
-      <div class="ficon">🧪</div>
-      <h3>策略研究</h3>
-      <p>信号定义、参数寻优、进攻/防守仓标的切换依据、样本外表现与过拟合风险提示。</p>
-    </a>
-    <a class="feature-card" href="about.html" style="text-decoration:none;color:inherit">
-      <div class="ficon">ℹ️</div>
-      <h3>关于本站</h3>
-      <p>数据源、更新机制、本地部署方式与免责声明。</p>
-    </a>
-  </div>
-
-  <div class="page-err" id="err">数据加载失败：请先运行 export_json.py 生成 data.json，并通过本地服务或已发布站点访问（勿直接双击 html）。</div>
-</div>
-
-<script src="assets/js/common.js"></script>
-<script src="assets/js/home.js"></script>
+<script defer src="assets/js/app.js"></script>
 </body>
 </html>

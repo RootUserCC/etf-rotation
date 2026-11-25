@@ -240,6 +240,15 @@ def sina_snapshot(pairs):
 
 # ---------------- CSV 读写与增量合并 ----------------
 
+def completed_daily(df, now=None):
+    """交易日 15:02 前排除当天未完成的日线，之后保留完整序列。"""
+    now = pd.Timestamp.now() if now is None else pd.Timestamp(now)
+    today = now.normalize()
+    if now >= today + pd.Timedelta(hours=15, minutes=2):
+        return df
+    return df[df.index.normalize() < today]
+
+
 def read_price_csv(path):
     df = pd.read_csv(path, parse_dates=['date'])
     df = df.set_index('date').sort_index()

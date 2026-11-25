@@ -172,14 +172,16 @@ def _update_one(code, market, fq, suffix, errors, kind='etf'):
         errors.append('%s: %s' % (label, repr(e)[:120]))
 
 
-def _etf_last_date():
-    """本地 ETF 数据的最新交易日（用于判断平均股价是否落后）"""
+def _etf_last_date(now=None):
+    """本地 ETF 数据的最新完整交易日（用于判断平均股价是否落后）"""
     last = None
     for code, _, _ in md.SYMBOLS:
         p = os.path.join(DATA_DIR, 'etf_%s_hfq.csv' % code)
         if os.path.exists(p):
-            d = md.read_price_csv(p).index[-1]
-            last = d if last is None else max(last, d)
+            df = md.completed_daily(md.read_price_csv(p), now)
+            if not df.empty:
+                d = df.index[-1]
+                last = d if last is None else max(last, d)
     return last
 
 
@@ -193,9 +195,7 @@ def _update_avg(errors):
 
     try:
         daily, pre_close = md.em_avg_daily()
-        complete = daily[daily.index < today]
-        if now.hour >= 15 and now.minute >= 2 and today in daily.index:
-            complete = pd.concat([complete, daily.loc[[today]]])
+        complete = md.completed_daily(daily, now)
         base = old if old is not None else complete.iloc[:0]
         out = md.merge_append(base, complete, label='avg_880003', rescale=False)
         source = 'eastmoney:800005'
@@ -203,12 +203,13 @@ def _update_avg(errors):
         print('  [警告] 东财平均股价不可用(%s)，尝试通达信 880003...' % repr(e)[:80])
         errors.append('avg_em: %s' % repr(e)[:120])
         tdx = md.tdx_avg()
+        tdx = md.completed_daily(tdx, now) if tdx is not None else None
         if tdx is None or not len(tdx):
             print('  [警告] 通达信也不可用，avg_880003.csv 保留旧数据')
             errors.append('avg_tdx: 无可用节点')
             if old is None:
                 raise RuntimeError('平均股价无任何可用数据源')
-            last = _etf_last_date()
+            last = _etf_last_date(now)
             stale = last is not None and old.index[-1].normalize() < last.normalize()
             return old, (old.index[-1].date().isoformat(), 'cached', stale)
         base = old if old is not None else tdx.iloc[:0]
@@ -224,7 +225,7 @@ def _update_avg(errors):
         source = 'cached'
 
     # 陈旧判断：平均股价是否落后于 ETF 的最新交易日（节假日不会误报）
-    etf_last = _etf_last_date()
+    etf_last = _etf_last_date(now)
     stale = etf_last is not None and out.index[-1].normalize() < etf_last.normalize()
     return out, (out.index[-1].date().isoformat(), source, stale)
 
