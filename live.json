@@ -1,1 +1,1 @@
-{"time": "15:10:03", "closed": true, "avg": {"value": 20.24, "prev": 21.24, "chg_pct": -4.71, "date": "2026-11-25"}, "sig": {"dif": -1.2265, "dea": -1.0904, "holding": "div", "preview": "none", "note": "休市"}, "etfs": [], "stale": false}
+{"time": "15:10:01", "closed": true, "avg": {"value": 20.12, "prev": 20.24, "chg_pct": -0.59, "date": "2026-11-26"}, "sig": {"dif": -1.2752, "dea": -1.1274, "s1_rel_drop": 0.02041, "r_dif": -0.0634, "r_strong": false, "holding": "div", "preview": "none", "note": "休市"}, "etfs": [], "stale": false}
