@@ -1,10 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-导出网站数据：平均股价(880003) + 进攻仓(拼接) + 512890 + 方案C信号/换仓点（MACD 17/34/9）
-进攻仓拼接口径：2024-06-28(159552 上市)前为中证1000ETF(512100)，此后为中证2000增强ETF(159552)；
-512100 序列仍原样导出，作为超额收益基准。
-（收益按后复权计算，价格列显示不复权真实价格）
+导出网站数据：平均股价(880003) + T1 / T2+ / T3 / T3+ 四策略完整回测与信号
+====================================================================
+四策略统一采用增强信号（S1 + S2）：
+  - 基础买点：880003 MACD-DIF(17/34) 零轴下方拐头向上
+  - 基础卖点：880003 MACD-DIF(17/34) 任意位置拐头向下
+  - S1 零下回落过滤：DIF > 0 拐头即卖；DIF <= 0 须满足 (近20日最高DIF - 当日DIF)/close > 0.0010 才卖
+  - S2 风格比值防洗盘：进攻/防守连续比值 R 的 DIF(12/26) 处于零上上行时屏蔽卖出
+
+四策略标的配置与执行口径（2024-06-28 前进攻腿以 512100 拼接历史，此后切至实盘标的）：
+  - T1  ：进攻 100% 159552 ｜ 防守 100% 512890 ｜ 买卖均 T+1 开盘
+  - T2+ ：进攻 60% 159552 + 40% 588220 ｜ 防守 50% (512890/159201 20日动量二选一) + 50% 518880 ｜ 买 T+1 开盘、卖 T 日尾盘
+  - T3  ：进攻 100% 159552 ｜ 防守 34% 512890 + 33% 518880 + 33% 513100 ｜ 买卖均 T+1 开盘
+  - T3+ ：进攻 60% 159552 + 40% 588220 ｜ 防守 34% (512890/159201 20日动量二选一) + 33% 518880 + 33% 513100 ｜ 买 T+1 开盘、卖 T 日尾盘
+
+收益按后复权真实成交拆段计算（含双边万1佣金），价格展示使用不复权真实价。
 输出 site/data.json
 """
 import sys
@@ -12,16 +23,17 @@ import io
 import os
 import json
 
+import numpy as np
 import pandas as pd
 
-if sys.platform == 'win32' and not getattr(sys.stdout, '_utf8_wrapped', False):
+if sys.platform == 'win32' and sys.stdout is not None and not getattr(sys.stdout, '_utf8_wrapped', False):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
     except Exception:
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stdout._utf8_wrapped = True
 
-from backtest import run_backtest, calc_signals
+from backtest import ema
 import market_data as md
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -29,85 +41,428 @@ DATA_DIR = os.path.join(BASE, 'data')
 SITE_DIR = os.path.join(BASE, 'site')
 os.makedirs(SITE_DIR, exist_ok=True)
 
-# 进攻仓切换：2024-06-28(159552 中证2000增强ETF 上市)起进攻腿由 512100 换成 159552
 SWITCH_ATK = pd.Timestamp('2024-06-28')
-ATK_NAME_OLD = '中证1000ETF'
-ATK_NAME_NEW = '中证2000增强'
+FEE_ONEWAY = 0.0001
+S1_WIN = 20
+S1_TH = 0.0010
+S2_FAST = 12
+S2_SLOW = 26
+
+ETF_NAMES = {
+    '512100': '中证1000ETF',
+    '159552': '中证2000增强',
+    '588220': '科创100ETF',
+    '512890': '红利低波ETF',
+    '159201': '自由现金流ETF',
+    '518880': '黄金ETF',
+    '513100': '纳指ETF',
+}
+
+STRATEGY_SPECS = [
+    {
+        'id': 'T1',
+        'name': 'T1 · 纯信号升级',
+        'short_name': 'T1 纯信号升级',
+        'badge': 'S1+S2 · T+1开盘',
+        'offense_mode': 'single',
+        'defense_mode': '512890',
+        'exec_mode': 't1_open',
+        'offense_desc': '100% 159552 中证2000增强',
+        'defense_desc': '100% 512890 红利低波',
+        'exec_desc': '买卖均 T+1 开盘成交',
+        'summary': '零新增标的，仅升级 S1+S2 卖出防洗盘过滤',
+    },
+    {
+        'id': 'T2+',
+        'name': 'T2+ · 纯国内无杠杆',
+        'short_name': 'T2+ 纯国内全栈',
+        'badge': 'S1+S2 · A3尾盘卖',
+        'offense_mode': 'dual_60_40',
+        'defense_mode': 'cn_201_gold',
+        'exec_mode': 'a3_asym',
+        'offense_desc': '60% 159552 + 40% 588220',
+        'defense_desc': '50% 512890/159201(择优) + 50% 518880',
+        'exec_desc': '买 T+1 开盘 · 卖 T 日尾盘',
+        'summary': '无 QDII 溢价风险，微盘/科创双核 + 红利/黄金防守',
+    },
+    {
+        'id': 'T3',
+        'name': 'T3 · 全球风险收益比',
+        'short_name': 'T3 全球低波优选',
+        'badge': 'S1+S2 · T+1开盘',
+        'offense_mode': 'single',
+        'defense_mode': 'glb_333',
+        'exec_mode': 't1_open',
+        'offense_desc': '100% 159552 中证2000增强',
+        'defense_desc': '34% 512890 + 33% 518880 + 33% 513100',
+        'exec_desc': '买卖均 T+1 开盘成交',
+        'summary': '无杠杆 Calmar 天花板，红利+黄金+纳指三资产防守',
+    },
+    {
+        'id': 'T3+',
+        'name': 'T3+ · 全球全栈最高',
+        'short_name': 'T3+ 全球全栈',
+        'badge': 'S1+S2 · A3尾盘卖',
+        'offense_mode': 'dual_60_40',
+        'defense_mode': 'glb_201_333',
+        'exec_mode': 'a3_asym',
+        'offense_desc': '60% 159552 + 40% 588220',
+        'defense_desc': '34% 512890/159201(择优) + 33% 518880 + 33% 513100',
+        'exec_desc': '买 T+1 开盘 · 卖 T 日尾盘',
+        'summary': '无杠杆最高收益全栈配置（513100 高溢价可切 513500）',
+    },
+]
 
 
-def atk_name(d):
-    return ATK_NAME_OLD if d < SWITCH_ATK else ATK_NAME_NEW
-
-
-def load(name):
+def load(name: str) -> pd.DataFrame:
     df = pd.read_csv(os.path.join(DATA_DIR, name), parse_dates=['date'])
     df = df.set_index('date').sort_index()
     df.index = df.index.normalize()
     return df
 
 
-def _status():
-    """fetch_data.py 写入的取数状态（缺失时返回空字典）"""
+def _status() -> dict:
     try:
         with open(os.path.join(DATA_DIR, '_status.json'), encoding='utf-8') as f:
             return json.load(f)
-    except Exception:  # noqa: BLE001 - 状态文件只是辅助信息
+    except Exception:  # noqa: BLE001
         return {}
 
 
-def main():
-    avg = load('avg_880003.csv')
-    etf1000 = load('etf_512100_hfq.csv')       # 后复权：拼接前进攻仓 + 超额基准
-    etfdiv = load('etf_512890_hfq.csv')
-    etf1000_raw = load('etf_512100.csv')       # 不复权：价格显示
-    etfdiv_raw = load('etf_512890.csv')
-    etf2000e = load('etf_159552_hfq.csv')      # 后复权：拼接后进攻仓（2024-06-28 起）
-    etf2000e_raw = load('etf_159552.csv')      # 不复权：价格显示
+def format_weights(weights: dict) -> str:
+    """将权重字典格式化为清晰代码标签，如 '60% 159552 + 40% 588220' 或 '159552 中证2000增强'"""
+    items = [(c, w) for c, w in weights.items() if w > 1e-6]
+    if len(items) == 1:
+        c = items[0][0]
+        return f'{c} {ETF_NAMES.get(c, c)}'
+    return ' + '.join(f'{round(w * 100)}% {c}' for c, w in items)
 
-    # 进攻腿拼接：切换日前整段用 512100，切换日起整段用 159552（信号不变，仍由 880003 决定）
-    etf_atk = pd.concat([etf1000[etf1000.index < SWITCH_ATK],
-                         etf2000e[etf2000e.index >= SWITCH_ATK]])
-    etf_atk_raw = pd.concat([etf1000_raw[etf1000_raw.index < SWITCH_ATK],
-                             etf2000e_raw[etf2000e_raw.index >= SWITCH_ATK]])
 
-    # 方案C全历史信号与换仓（MACD 17/34/9 慢速拐点；回测窗口=512890上市起(2019-01-18)，保证净值/持仓区间完整）
-    res = run_backtest(avg, etf_atk, etfdiv, fee=0.0001, sell_anywhere=True,
-                       fast=17, slow=34, sig_n=9, label='C', verbose=False)
+def format_weights_full(weights: dict) -> str:
+    items = [(c, w) for c, w in weights.items() if w > 1e-6]
+    if len(items) == 1:
+        c = items[0][0]
+        return f'100% {c}({ETF_NAMES.get(c, c)})'
+    return ' + '.join(f'{round(w * 100)}% {c}({ETF_NAMES.get(c, c)})' for c, w in items)
 
-    # 拼接守卫：切换日若跨界持有进攻仓，简单拼接会使当日收益失真，需先拆段处理
-    i_sw = res['idx'].searchsorted(SWITCH_ATK)
-    if (0 < i_sw < len(res['idx'])
-            and res['hold1000'].iloc[i_sw] and res['hold1000'].iloc[i_sw - 1]):
-        raise SystemExit('切换日 %s 跨界持有进攻仓，需先处理持仓段拆分' % SWITCH_ATK.date())
-    sig_full = calc_signals(avg['close'], sell_anywhere=True,
-                            fast=17, slow=34, sig_n=9)
 
-    idx = res['idx']
+def build_continuous_atk_nav(hfq: dict, idx: pd.DatetimeIndex) -> pd.Series:
+    """构造 512100 -> 159552 无缝连续进攻净值（供 S2 风格比值 R-DIF 计算）"""
+    a1 = hfq['512100'].reindex(idx).ffill()
+    a2 = hfq['159552'].reindex(idx).ffill()
+    vals = [1.0]
+    for i in range(1, len(idx)):
+        d = idx[i]
+        if d < SWITCH_ATK:
+            r = float(a1['close'].iloc[i]) / float(a1['close'].iloc[i - 1])
+        elif d == SWITCH_ATK:
+            r = (float(a1['open'].iloc[i]) / float(a1['close'].iloc[i - 1])
+                 * float(a2['close'].iloc[i]) / float(a2['open'].iloc[i]))
+        else:
+            r = float(a2['close'].iloc[i]) / float(a2['close'].iloc[i - 1])
+        vals.append(vals[-1] * r)
+    return pd.Series(vals, index=idx)
+
+
+def compute_enhanced_signals(avg: pd.DataFrame, hfq: dict, idx: pd.DatetimeIndex) -> pd.DataFrame:
+    """在全历史 avg 上计算 DIF(17/34/9) 与 S1+S2 增强信号"""
+    close = avg['close']
+    dif = ema(close, 17) - ema(close, 34)
+    dea = ema(dif, 9)
+    macdval = (dif - dea) * 2
+    dif_p1 = dif.shift(1)
+    dif_p2 = dif.shift(2)
+    dif_up = (dif_p1 < dif_p2) & (dif > dif_p1)
+    dif_dn = (dif_p1 > dif_p2) & (dif < dif_p1)
+    rel_drop = (dif.rolling(S1_WIN, min_periods=1).max() - dif) / close
+
+    df = pd.DataFrame({
+        'dif': dif,
+        'dea': dea,
+        'macdval': macdval,
+        'dif_up': dif_up,
+        'dif_dn': dif_dn,
+        'rel_drop': rel_drop,
+    }).loc[idx].copy()
+
+    # S2: 进攻/防守相对强弱比值 R 的 DIF(12/26)
+    atk_nav = build_continuous_atk_nav(hfq, idx)
+    div_c = hfq['512890'].reindex(idx).ffill()['close']
+    ratio = atk_nav / (div_c / div_c.iloc[0])
+    r_dif = ema(ratio, S2_FAST) - ema(ratio, S2_SLOW)
+    r_strong = (r_dif > 0) & (r_dif > r_dif.shift(1))
+
+    df['r_dif'] = r_dif
+    df['r_strong'] = r_strong.fillna(False)
+    df['buy_sig'] = df['dif_up'] & (df['dif'] < 0)
+    df['raw_sell_sig'] = df['dif_dn']
+    df['s1_pass'] = (df['dif'] > 0) | (df['rel_drop'] > S1_TH)
+    df['s1_blocked'] = df['raw_sell_sig'] & (~df['s1_pass'])
+    df['s2_blocked'] = df['raw_sell_sig'] & df['s1_pass'] & df['r_strong']
+    df['sell_sig'] = df['raw_sell_sig'] & df['s1_pass'] & (~df['r_strong'])
+    return df
+
+
+def pick_def_201(sig_day: pd.Timestamp, mom890: pd.Series, mom201: pd.Series) -> str:
+    m1 = mom890.get(sig_day, float('nan'))
+    m2 = mom201.get(sig_day, float('nan'))
+    if pd.isna(m2):
+        return '512890'
+    if pd.isna(m1):
+        return '159201'
+    return '512890' if m1 >= m2 else '159201'
+
+
+def offense_weights(day: pd.Timestamp, mode: str) -> dict:
+    if day < SWITCH_ATK:
+        return {'512100': 1.0}
+    if mode == 'dual_60_40':
+        return {'159552': 0.6, '588220': 0.4}
+    return {'159552': 1.0}
+
+
+def defense_weights(sig_day: pd.Timestamp, mode: str, mom890: pd.Series, mom201: pd.Series) -> dict:
+    if mode == '512890':
+        return {'512890': 1.0}
+    if mode == 'cn_201_gold':
+        c = pick_def_201(sig_day, mom890, mom201)
+        return {c: 0.5, '518880': 0.5}
+    if mode == 'glb_333':
+        return {'512890': 0.34, '518880': 0.33, '513100': 0.33}
+    if mode == 'glb_201_333':
+        c = pick_def_201(sig_day, mom890, mom201)
+        return {c: 0.34, '518880': 0.33, '513100': 0.33}
+    raise ValueError(mode)
+
+
+def simulate_strategy(spec: dict, sig: pd.DataFrame, hfq: dict, raw: dict,
+                      idx: pd.DatetimeIndex, mom890: pd.Series, mom201: pd.Series) -> dict:
+    """运行单个策略的精确拆段回测，输出 nav_strat / hold_spans / trades / legs / last_signal"""
     dates = [d.strftime('%Y-%m-%d') for d in idx]
+    n = len(idx)
 
-    def series(df):
-        s = df.loc[idx, 'close']
-        return [round(float(v), 3) for v in s.values]
+    o_hfq, c_hfq, o_raw, c_raw = {}, {}, {}, {}
+    for code in ETF_NAMES:
+        dfh = hfq[code].reindex(idx).ffill()
+        dfr = raw[code].reindex(idx).ffill()
+        o_hfq[code] = dfh['open'].values.astype(float)
+        c_hfq[code] = dfh['close'].values.astype(float)
+        o_raw[code] = dfr['open'].values.astype(float)
+        c_raw[code] = dfr['close'].values.astype(float)
 
-    def series_k(df):
-        """K线序列：[open, close, low, high]（ECharts candlestick 数据顺序）"""
-        o = df.loc[idx, 'open']
-        c = df.loc[idx, 'close']
-        lo = df.loc[idx, 'low']
-        hi = df.loc[idx, 'high']
-        return [[round(float(a), 3), round(float(b), 3), round(float(l), 3), round(float(h), 3)]
-                for a, b, l, h in zip(o.values, c.values, lo.values, hi.values)]
+    buy_arr = sig['buy_sig'].values.astype(bool)
+    sell_arr = sig['sell_sig'].values.astype(bool)
+    exec_mode = spec['exec_mode']
+    off_mode = spec['offense_mode']
+    def_mode = spec['defense_mode']
 
-    def series_sparse(df):
-        """标的历史不足全窗口时（如 159552 自 2024-06-28 起），缺失日期补 None"""
-        s = df['close']
-        return [round(float(s[d]), 3) if d in s.index else None for d in idx]
+    state = False  # False=防守, True=进攻
+    init_w = defense_weights(idx[0], def_mode, mom890, mom201)
+    weights = dict(init_w)
+    target_w = dict(init_w)
+    nav = np.ones(n, dtype=float)
+    hold_atk = np.zeros(n, dtype=bool)
+    pending = None
 
-    # 持仓区间（持有1000ETF的连续段）
-    hold = res['hold1000'].values
+    trades = []
+    legs = []
+
+    def price_summary(w_dict: dict, px_map: dict, i_pos: int):
+        items = [(c, w) for c, w in w_dict.items() if w > 1e-6]
+        if len(items) == 1:
+            c = items[0][0]
+            v = round(float(px_map[c][i_pos]), 3)
+            return v, f'{v:.3f}'
+        parts = [f'{c}:{float(px_map[c][i_pos]):.3f}' for c, _ in items]
+        return round(float(px_map[items[0][0]][i_pos]), 3), ' / '.join(parts)
+
+    def build_codes_detail(w_dict: dict, buy_px_map: dict, buy_i: int, cur_px_map: dict, cur_i: int):
+        res = []
+        for c, w in w_dict.items():
+            if w <= 1e-6:
+                continue
+            bp = float(buy_px_map[c][buy_i])
+            cp = float(cur_px_map[c][cur_i])
+            res.append({
+                'code': c,
+                'name': ETF_NAMES.get(c, c),
+                'weight': round(float(w), 4),
+                'buy_price': round(bp, 3),
+                'last_price': round(cp, 3),
+            })
+        return res
+
+    leg_start_i = 0
+    leg_start_nav = 1.0
+    leg_entry_px_map = c_raw
+    leg_asset = 'div'
+    leg_target_w = dict(init_w)
+
+    for i in range(1, n):
+        d = idx[i]
+        did_open = False
+        new_w = None
+        is_trade = False
+
+        if pending == 'buy' and not state:
+            new_w = offense_weights(d, off_mode)
+            did_open = True
+            is_trade = True
+            state = True
+            pending = None
+        elif pending == 'sell' and state:
+            new_w = defense_weights(idx[i - 1], def_mode, mom890, mom201)
+            did_open = True
+            is_trade = True
+            state = False
+            pending = None
+        elif d == SWITCH_ATK and state:
+            new_w = offense_weights(d, off_mode)
+            did_open = True
+            is_trade = False
+        else:
+            pending = None
+
+        if did_open:
+            r_ovn = sum(w * (o_hfq[c][i] / c_hfq[c][i - 1] - 1.0) for c, w in weights.items())
+            w_open = nav[i - 1] * (1.0 + r_ovn)
+            if is_trade:
+                w_open *= (1.0 - 2.0 * FEE_ONEWAY)
+                leg_ret = w_open / leg_start_nav - 1.0
+                si = i - 1
+                bp_val, bp_txt = price_summary(leg_target_w, leg_entry_px_map, leg_start_i)
+                sp_val, sp_txt = price_summary(leg_target_w, o_raw, i)
+                legs.append({
+                    'asset': leg_asset,
+                    'asset_name': format_weights(leg_target_w),
+                    'buy_date': dates[leg_start_i],
+                    'buy_price': bp_val,
+                    'buy_price_text': bp_txt,
+                    'sell_date': dates[i],
+                    'sell_price': sp_val,
+                    'sell_price_text': sp_txt,
+                    'days': i - leg_start_i + 1,
+                    'ret': round(leg_ret, 4),
+                    'cum': round(w_open - 1.0, 4),
+                    'open': False,
+                })
+                nb_val, nb_txt = price_summary(new_w, o_raw, i)
+                trades.append({
+                    'date': dates[i],
+                    'sig_date': dates[si],
+                    'action': 'buy' if state else 'sell',
+                    'exec_timing': 'T+1开盘',
+                    'sell_desc': format_weights(leg_target_w),
+                    'buy_desc': format_weights(new_w),
+                    'asset_name': format_weights(new_w if state else leg_target_w),
+                    'price': nb_val,
+                    'price_text': nb_txt,
+                    'dif': round(float(sig['dif'].iloc[si]), 4),
+                    'dea': round(float(sig['dea'].iloc[si]), 4),
+                    'macdval': round(float(sig['macdval'].iloc[si]), 4),
+                    'leg_ret': round(leg_ret, 4),
+                    'cum_ret': round(w_open - 1.0, 4),
+                })
+                leg_start_i = i
+                leg_start_nav = w_open
+                leg_entry_px_map = o_raw
+                leg_asset = '1000' if state else 'div'
+                leg_target_w = dict(new_w)
+            else:
+                leg_target_w = dict(new_w)
+
+            r_intra = sum(w * (c_hfq[c][i] / o_hfq[c][i] - 1.0) for c, w in new_w.items())
+            nav[i] = w_open * (1.0 + r_intra)
+            denom = sum(w * (c_hfq[c][i] / o_hfq[c][i]) for c, w in new_w.items())
+            weights = {c: (w * (c_hfq[c][i] / o_hfq[c][i])) / denom for c, w in new_w.items()}
+            target_w = dict(new_w)
+        else:
+            r_day = sum(w * (c_hfq[c][i] / c_hfq[c][i - 1] - 1.0) for c, w in weights.items())
+            nav[i] = nav[i - 1] * (1.0 + r_day)
+            denom = sum(w * (c_hfq[c][i] / c_hfq[c][i - 1]) for c, w in weights.items())
+            weights = {c: (w * (c_hfq[c][i] / c_hfq[c][i - 1])) / denom for c, w in weights.items()}
+
+        # 当日收盘前状态记入持仓区间（A3 尾盘卖出当天仍属进攻段最后一日，次日起转防守）
+        hold_atk[i] = state
+
+        # 收盘信号判断
+        if buy_arr[i] and not state:
+            pending = 'buy'
+        elif sell_arr[i] and state:
+            if exec_mode == 'a3_asym':
+                new_w = defense_weights(d, def_mode, mom890, mom201)
+                nav[i] *= (1.0 - 2.0 * FEE_ONEWAY)
+                leg_ret = nav[i] / leg_start_nav - 1.0
+                bp_val, bp_txt = price_summary(leg_target_w, leg_entry_px_map, leg_start_i)
+                sp_val, sp_txt = price_summary(leg_target_w, c_raw, i)
+                legs.append({
+                    'asset': leg_asset,
+                    'asset_name': format_weights(leg_target_w),
+                    'buy_date': dates[leg_start_i],
+                    'buy_price': bp_val,
+                    'buy_price_text': bp_txt,
+                    'sell_date': dates[i],
+                    'sell_price': sp_val,
+                    'sell_price_text': sp_txt,
+                    'days': i - leg_start_i + 1,
+                    'ret': round(leg_ret, 4),
+                    'cum': round(nav[i] - 1.0, 4),
+                    'open': False,
+                })
+                nb_val, nb_txt = price_summary(new_w, c_raw, i)
+                trades.append({
+                    'date': dates[i],
+                    'sig_date': dates[i],
+                    'action': 'sell',
+                    'exec_timing': 'T日尾盘',
+                    'sell_desc': format_weights(leg_target_w),
+                    'buy_desc': format_weights(new_w),
+                    'asset_name': format_weights(leg_target_w),
+                    'price': nb_val,
+                    'price_text': nb_txt,
+                    'dif': round(float(sig['dif'].iloc[i]), 4),
+                    'dea': round(float(sig['dea'].iloc[i]), 4),
+                    'macdval': round(float(sig['macdval'].iloc[i]), 4),
+                    'leg_ret': round(leg_ret, 4),
+                    'cum_ret': round(nav[i] - 1.0, 4),
+                })
+                leg_start_i = i
+                leg_start_nav = nav[i]
+                leg_entry_px_map = c_raw
+                leg_asset = 'div'
+                leg_target_w = dict(new_w)
+                weights = dict(new_w)
+                target_w = dict(new_w)
+                state = False
+                pending = None
+            else:
+                pending = 'sell'
+
+    # 尾段当前持仓（open=True）
+    bp_val, bp_txt = price_summary(leg_target_w, leg_entry_px_map, leg_start_i)
+    cp_val, cp_txt = price_summary(leg_target_w, c_raw, n - 1)
+    open_ret = nav[-1] / leg_start_nav - 1.0
+    legs.append({
+        'asset': leg_asset,
+        'asset_name': format_weights(leg_target_w),
+        'asset_full': format_weights_full(leg_target_w),
+        'codes': build_codes_detail(leg_target_w, leg_entry_px_map, leg_start_i, c_raw, n - 1),
+        'buy_date': dates[leg_start_i],
+        'buy_price': bp_val,
+        'buy_price_text': bp_txt,
+        'sell_date': None,
+        'sell_price': cp_val,
+        'sell_price_text': cp_txt,
+        'days': n - leg_start_i,
+        'ret': round(open_ret, 4),
+        'cum': round(nav[-1] - 1.0, 4),
+        'open': True,
+    })
+
+    # 持仓区间（进攻仓连续段）
     spans = []
     start_i = None
-    for i, h in enumerate(hold):
+    for i, h in enumerate(hold_atk):
         if h and start_i is None:
             start_i = i
         elif not h and start_i is not None:
@@ -116,196 +471,186 @@ def main():
     if start_i is not None:
         spans.append([dates[start_i], dates[-1]])
 
-    # 换仓点：信号于 T-1 日收盘产生（DIF/DEA/MACD柱 取信号日数值），T 日开盘成交
-    sig = sig_full.loc[idx]
-    pos_of = {d: i for i, d in enumerate(idx)}
-    odiv = etfdiv.loc[idx, 'open']          # 后复权：收益计算
-    oatk = etf_atk.loc[idx, 'open']         # 拼接进攻腿（切换日前=512100，后=159552）
-    cdiv = etfdiv.loc[idx, 'close']
-    catk = etf_atk.loc[idx, 'close']
-    odiv_raw = etfdiv_raw.loc[idx, 'open']  # 不复权：价格显示
-    oatk_raw = etf_atk_raw.loc[idx, 'open']
-    cdiv_raw = etfdiv_raw.loc[idx, 'close']
-    catk_raw = etf_atk_raw.loc[idx, 'close']
-    # 真实成交口径账户净值：普通日按持仓收盘→收盘；换仓日拆为
-    # 旧仓隔夜段(昨收→今开) + 新仓日内段(今开→今收)，扣双边万1
-    def wealth_from_trades(trades_list):
-        switch_at = {pos_of[d]: a for d, a, p in trades_list}
-        w = [1.0]
-        held_div = True
-        for i in range(1, len(idx)):
-            a = switch_at.get(i)
-            if a is None:
-                c = cdiv if held_div else catk
-                wi = w[-1] * float(c.iloc[i]) / float(c.iloc[i - 1])
-            elif a.startswith('买入'):
-                wi = (w[-1] * float(odiv.iloc[i]) / float(cdiv.iloc[i - 1])
-                      * float(catk.iloc[i]) / float(oatk.iloc[i]) * (1 - 2 * 0.0001))
-                held_div = False
-            else:
-                wi = (w[-1] * float(oatk.iloc[i]) / float(catk.iloc[i - 1])
-                      * float(cdiv.iloc[i]) / float(odiv.iloc[i]) * (1 - 2 * 0.0001))
-                held_div = True
-            w.append(wi)
-        return pd.Series(w, index=idx)
+    # 最新收盘信号详情
+    last_i = n - 1
+    next_off = offense_weights(idx[last_i], off_mode)
+    next_def = defense_weights(idx[last_i], def_mode, mom890, mom201)
+    blocked_reason = ''
+    if sig['s1_blocked'].iloc[last_i]:
+        blocked_reason = 'S1 零下回落不足 0.0010（屏蔽假拐头）'
+    elif sig['s2_blocked'].iloc[last_i]:
+        blocked_reason = 'S2 风格比值 R-DIF(12/26) 零上走强（屏蔽洗盘）'
 
-    wealth = wealth_from_trades(res['trades'])
+    last_sig_action = 'none'
+    if buy_arr[last_i] and not state:
+        last_sig_action = 'buy'
+    elif sell_arr[last_i] and state:
+        last_sig_action = 'sell'
 
-    # 区间收益按实盘口径：上次换仓开盘价建仓 → 本次换仓开盘价了结，扣双边万1
-    # 累计收益取换仓成交时刻（当日开盘）的账户价值 = 区间收益逐笔连乘，两行严格对账
-    entry = float(etfdiv.loc[idx[0], 'close'])   # 初始持有红利低波，视作回测首日收盘建仓
-    wopen = 1.0
-    trades = []
-    for d, a, p in res['trades']:
-        i = pos_of[d]
-        si = max(i - 1, 0)                    # 信号日 = 成交日前一交易日
-        # 本次操作卖出（了结）的标的：'买入进攻/卖出红利低波'→红利低波；反之→进攻标的
-        closed = odiv if a.startswith('买入') else oatk
-        leg_ret = float(closed.iloc[i]) / entry - 1 - 2 * 0.0001
-        wopen *= (1 + leg_ret)
-        price_raw = oatk_raw if a.startswith('买入') else odiv_raw   # 买入标的的真实开盘价
-        trades.append({
-            'date': d.strftime('%Y-%m-%d'),
-            'sig_date': idx[si].strftime('%Y-%m-%d'),
-            'action': 'buy' if a.startswith('买入') else 'sell',
-            'asset_name': atk_name(d),         # 本次换仓涉及的进攻标的（按成交日拼接）
-            'price': round(float(price_raw.iloc[i]), 3),
-            'patk': round(float(catk_raw.iloc[i]), 3),   # 当日进攻标的不复权收盘
-            'pdiv': round(float(cdiv_raw.iloc[i]), 3),
-            'dif': round(float(sig['dif'].iloc[si]), 4),
-            'dea': round(float(sig['dea'].iloc[si]), 4),
-            'macdval': round(float(sig['macdval'].iloc[si]), 4),
-            'leg_ret': round(leg_ret, 4),            # 本段持仓收益（开盘价口径，含双边费用）
-            'cum_ret': round(wopen - 1, 4),          # 累计收益（换仓时刻，=区间收益连乘）
-        })
-        entry = float(p)                          # 新仓位以当日开盘价建仓
+    # 摘要指标（便于前端顶部四策略卡片直接展示）
+    nav_s = pd.Series(nav, index=idx)
+    dr = nav_s.pct_change().dropna()
+    years = len(idx) / 252.0
+    cum_ret = float(nav[-1] - 1.0)
+    ann_ret = float(nav[-1] ** (1.0 / years) - 1.0) if years > 0 else 0.0
+    peak = nav_s.cummax()
+    mdd = float(((nav_s - peak) / peak).min())
+    calmar = ann_ret / abs(mdd) if mdd < 0 else 0.0
+    sharpe = float(dr.mean() / dr.std() * np.sqrt(252)) if dr.std() > 0 else 0.0
+    cur_yr = idx[-1].year
+    yr_mask = idx.year == cur_yr
+    first_yr_pos = int(np.argmax(yr_mask))
+    prev_yr_nav = float(nav[first_yr_pos - 1]) if first_yr_pos > 0 else 1.0
+    ytd = float(nav[-1] / prev_yr_nav - 1.0)
 
-    # 持仓明细：每行一段完整持仓（买入→卖出），最后一行为当前持有中（浮动盈亏按最新收盘估）
-    # 收益按后复权计算（与真实价格口径等价），buy/sell 价格列显示不复权真实价格
-    legs = []
-    leg_date = idx[0]
-    leg_price = float(etfdiv.loc[idx[0], 'close'])   # 首段视作回测首日收盘建仓红利低波
-    leg_price_disp = float(etfdiv_raw.loc[idx[0], 'close'])
-    leg_asset = 'div'
-    leg_name = '红利低波ETF'
-    prev_i = 0
-    wcum = 1.0
-    for d, a, p in res['trades']:
-        i = pos_of[d]
-        closed_o = odiv if leg_asset == 'div' else oatk
-        closed_o_raw = odiv_raw if leg_asset == 'div' else oatk_raw
-        sell_price = float(closed_o.iloc[i])
-        ret = sell_price / leg_price - 1 - 2 * 0.0001
-        wcum *= (1 + ret)
-        legs.append({
-            'asset': leg_asset,                      # '1000'=进攻仓（含159552段）, 'div'=防守仓
-            'asset_name': leg_name,                  # 实际持有标的中文名（前端显示用）
-            'buy_date': leg_date.strftime('%Y-%m-%d'),
-            'buy_price': round(leg_price_disp, 3),
-            'sell_date': d.strftime('%Y-%m-%d'),
-            'sell_price': round(float(closed_o_raw.iloc[i]), 3),
-            'days': i - prev_i + 1,                 # 持有交易日（买入当天计入）
-            'ret': round(ret, 4),
-            'cum': round(wcum - 1, 4),
-            'open': False,
-        })
-        leg_asset = '1000' if a.startswith('买入') else 'div'
-        leg_date = d
-        leg_name = atk_name(d) if leg_asset == '1000' else '红利低波ETF'
-        leg_price = float(p)
-        leg_price_disp = float((oatk_raw if a.startswith('买入') else odiv_raw).iloc[i])
-        prev_i = i
-    last_close = float((cdiv if leg_asset == 'div' else catk).iloc[-1])
-    last_close_raw = float((cdiv_raw if leg_asset == 'div' else catk_raw).iloc[-1])
-    ret_open = last_close / leg_price - 1 - 2 * 0.0001
-    legs.append({
-        'asset': leg_asset,
-        'asset_name': leg_name,
-        'buy_date': leg_date.strftime('%Y-%m-%d'),
-        'buy_price': round(leg_price_disp, 3),
-        'sell_date': None,
-        'sell_price': round(last_close_raw, 3),
-        'days': len(idx) - prev_i,                  # 持有交易日（买入当天计入）
-        'ret': round(ret_open, 4),
-        'cum': round(wcum * (1 + ret_open) - 1, 4),
-        'open': True,
-    })
+    return {
+        'id': spec['id'],
+        'name': spec['name'],
+        'short_name': spec['short_name'],
+        'badge': spec['badge'],
+        'exec_mode': exec_mode,
+        'offense_desc': spec['offense_desc'],
+        'defense_desc': spec['defense_desc'],
+        'exec_desc': spec['exec_desc'],
+        'summary': spec['summary'],
+        'metrics': {
+            'cum_ret': round(cum_ret, 4),
+            'ann_ret': round(ann_ret, 4),
+            'mdd': round(mdd, 4),
+            'calmar': round(calmar, 2),
+            'sharpe': round(sharpe, 2),
+            'trades': len(trades),
+            'ytd': round(ytd, 4),
+            'final_nav': round(float(nav[-1]), 4),
+        },
+        'nav_strat': [round(float(v), 4) for v in nav],
+        'hold_spans': spans,
+        'trades': trades,
+        'legs': legs,
+        'last_signal': {
+            'date': dates[last_i],
+            'action': last_sig_action,
+            'blocked_reason': blocked_reason,
+            'next_offense': format_weights(next_off),
+            'next_defense': format_weights(next_def),
+        },
+    }
 
-    # 防守池双择优（512890 红利低波 / 159201 自由现金流）：
-    # 切入防守时比较近20日涨幅选高者，防守期间不换仓；下次切入重新比较
-    defense_pick = None
-    try:
-        d201 = load('etf_159201_hfq.csv')
-        mom890 = etfdiv['close'] / etfdiv['close'].shift(20) - 1
-        mom201 = d201['close'] / d201['close'].shift(20) - 1
 
-        def pick_at(day):
-            """某日收盘后按近20日涨幅选防守标的（159201 未上市/数据缺失时取 512890）"""
-            m1 = mom890.get(day, float('nan'))
-            m2 = mom201.get(day, float('nan'))
-            if pd.isna(m2):
-                return '512890'
-            if pd.isna(m1):
-                return '159201'
-            return '512890' if m1 >= m2 else '159201'
+def main():
+    avg = load('avg_880003.csv')
+    hfq = {c: load(f'etf_{c}_hfq.csv') for c in ETF_NAMES}
+    raw = {c: load(f'etf_{c}.csv') for c in ETF_NAMES}
 
-        # 双择优规则下当前防守仓应持有的标的（最近一次切入防守时的选择）
-        holding_def = None
-        if legs and legs[-1]['asset'] == 'div' and legs[-1]['open']:
-            for d, a, p in reversed(res['trades']):
-                if a.startswith('卖出'):                # 卖出进攻/买入防守
-                    holding_def = pick_at(idx[max(pos_of[d] - 1, 0)])
-                    break
-        # 若今日触发卖出信号应买入的防守标的（按最新公共交易日动量，159201 数据可能偏旧）
-        mom_day = min(etfdiv.index[-1], d201.index[-1])
+    # 公共交易日：与 512890 / 518880 / 513100 / avg / 进攻拼接交集对齐
+    atk_idx = hfq['512100'].index[hfq['512100'].index < SWITCH_ATK].union(
+        hfq['159552'].index[hfq['159552'].index >= SWITCH_ATK]
+    )
+    idx = (avg.index
+           .intersection(hfq['512890'].index)
+           .intersection(hfq['518880'].index)
+           .intersection(hfq['513100'].index)
+           .intersection(atk_idx))
 
-        def _r(x):
-            return None if pd.isna(x) else round(float(x), 4)
+    sig = compute_enhanced_signals(avg, hfq, idx)
 
-        defense_pick = {
-            'mom_date': mom_day.strftime('%Y-%m-%d'),
-            'mom_890': _r(mom890.get(mom_day, float('nan'))),
-            'mom_201': _r(mom201.get(mom_day, float('nan'))),
-            'in_defense': holding_def is not None,
-            'holding_def': holding_def,
-            'next_pick': pick_at(mom_day),
-        }
-    except FileNotFoundError:
-        print('  (无 etf_159201_hfq.csv，跳过防守择优输出)')
+    mom890 = hfq['512890']['close'] / hfq['512890']['close'].shift(20) - 1.0
+    mom201 = hfq['159201']['close'] / hfq['159201']['close'].shift(20) - 1.0
+
+    strategies = {}
+    for spec in STRATEGY_SPECS:
+        strategies[spec['id']] = simulate_strategy(spec, sig, hfq, raw, idx, mom890, mom201)
+
+    dates = [d.strftime('%Y-%m-%d') for d in idx]
+
+    def series(df):
+        s = df.reindex(idx).ffill()['close']
+        return [round(float(v), 3) for v in s.values]
+
+    def series_k(df):
+        al = df.reindex(idx).ffill()
+        return [[round(float(a), 3), round(float(b), 3), round(float(l), 3), round(float(h), 3)]
+                for a, b, l, h in zip(al['open'].values, al['close'].values, al['low'].values, al['high'].values)]
+
+    def series_sparse(df):
+        s = df['close']
+        return [round(float(s[d]), 3) if d in s.index else None for d in idx]
+
+    # 防守池 512890 / 159201 20日动量状态
+    mom_day = min(hfq['512890'].index[-1], hfq['159201'].index[-1], idx[-1])
+    t2p_legs = strategies['T2+']['legs']
+    in_def_now = bool(t2p_legs and t2p_legs[-1]['asset'] == 'div')
+    holding_def = None
+    if in_def_now:
+        for cd in t2p_legs[-1].get('codes', []):
+            if cd['code'] in ('512890', '159201'):
+                holding_def = cd['code']
+                break
+
+    def _r(x):
+        return None if pd.isna(x) else round(float(x), 4)
+
+    defense_pick = {
+        'mom_date': mom_day.strftime('%Y-%m-%d'),
+        'mom_890': _r(mom890.get(mom_day, float('nan'))),
+        'mom_201': _r(mom201.get(mom_day, float('nan'))),
+        'in_defense': in_def_now,
+        'holding_def': holding_def,
+        'next_pick': pick_def_201(mom_day, mom890, mom201),
+    }
 
     st = _status()
-    etf_last = max(md.completed_daily(etfdiv).index[-1],
-                   md.completed_daily(etf_atk).index[-1])
+    etf_last = max(md.completed_daily(hfq['512890']).index[-1],
+                   md.completed_daily(hfq['159552']).index[-1])
     avg_stale = bool(st.get('avg_stale') or avg.index[-1] < etf_last)
+
+    # 顶层保留 T1 的核心字段，保证 live.py 等旧读取方无缝兼容
+    t1 = strategies['T1']
     out = {
         'dates': dates,
         'avg': series(avg),
-        'avg_k': series_k(avg),                   # 平均股价 K线（开/收/低/高）
-        'etf1000': series(etf1000_raw),
-        'etfdiv': series(etfdiv_raw),
-        'etf1000_hfq': series(etf1000),           # 后复权：净值对比基准（超额收益沿用512100口径）
-        'etfdiv_hfq': series(etfdiv),
-        'etf2000e': series_sparse(etf2000e_raw),  # 159552 不复权（2024-06-28 前为 null）
-        'etf2000e_hfq': series_sparse(etf2000e),  # 159552 后复权（同上）
-        'switch_atk': SWITCH_ATK.strftime('%Y-%m-%d'),   # 进攻仓切换日（512100→159552）
+        'avg_k': series_k(avg),
+        'etf1000': series(raw['512100']),
+        'etfdiv': series(raw['512890']),
+        'etf1000_hfq': series(hfq['512100']),
+        'etfdiv_hfq': series(hfq['512890']),
+        'etf2000e': series_sparse(raw['159552']),
+        'etf2000e_hfq': series_sparse(hfq['159552']),
+        'etf588220': series_sparse(raw['588220']),
+        'etf518880': series(raw['518880']),
+        'etf513100': series(raw['513100']),
+        'switch_atk': SWITCH_ATK.strftime('%Y-%m-%d'),
         'dif': [round(float(v), 4) for v in sig['dif'].values],
         'dea': [round(float(v), 4) for v in sig['dea'].values],
-        'trades': trades,
-        'legs': legs,
-        'hold_spans': spans,
-        'nav_strat': [round(float(v), 4) for v in wealth.values],   # 真实成交口径净值
-        'defense_pick': defense_pick,             # 防守池双择优（512890/159201，近20日动量）
+        's1_rel_drop': [round(float(v), 5) if not pd.isna(v) else None for v in sig['rel_drop'].values],
+        's1_threshold': S1_TH,
+        'r_dif': [round(float(v), 4) if not pd.isna(v) else None for v in sig['r_dif'].values],
+        'r_strong': [bool(v) for v in sig['r_strong'].values],
+        # 顶层默认镜像 T1（兼容 live.py）
+        'trades': t1['trades'],
+        'legs': t1['legs'],
+        'hold_spans': t1['hold_spans'],
+        'nav_strat': t1['nav_strat'],
+        # 四策略完整数据
+        'default_strategy': 'T1',
+        'strategy_order': [s['id'] for s in STRATEGY_SPECS],
+        'strategies': strategies,
+        'defense_pick': defense_pick,
         'updated': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'),
-        'avg_date': avg.index[-1].strftime('%Y-%m-%d'),   # 平均股价数据日期
-        'avg_source': st.get('avg_source', ''),      # eastmoney:800005 / tdx:880003 / cached
+        'avg_date': avg.index[-1].strftime('%Y-%m-%d'),
+        'avg_source': st.get('avg_source', ''),
         'avg_stale': avg_stale,
         'data_errors': st.get('errors', []),
     }
+
     path = os.path.join(SITE_DIR, 'data.json')
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False)
-    print('已导出 %s  (%d 个交易日, %d 个换仓点, %d 段持仓区间)'
-          % (path, len(dates), len(trades), len(spans)))
+    print(f'已导出 {path}  ({len(dates)} 个交易日, 截至 {dates[-1]})')
+    for sid in out['strategy_order']:
+        m = strategies[sid]['metrics']
+        print(f"  {sid:<4} 累计 {m['cum_ret']*100:>6.1f}% | 年化 {m['ann_ret']*100:>5.2f}% | "
+              f"MDD {m['mdd']*100:>6.2f}% | Calmar {m['calmar']:>4.2f} | 换仓 {m['trades']:>3d} 次")
 
 
 if __name__ == '__main__':

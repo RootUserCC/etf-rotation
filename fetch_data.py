@@ -154,17 +154,17 @@ def _update_one(code, market, fq, suffix, errors, kind='etf'):
         cols = ['open', 'high', 'low', 'close', 'vol', 'amount'] if suffix == '' else None
     label = os.path.basename(path)[:-4]
     try:
-        new = md.tx_daily(code, market, fq, n=320)
+        new = md.completed_daily(md.tx_daily(code, market, fq, n=320))
         if os.path.exists(path):
             old = md.read_price_csv(path)
             try:
                 out = md.merge_append(old, new, label=label, rescale=(fq != ''))
             except ValueError:
                 print('  [回补] %s 与本地无重叠，拉全历史' % label)
-                out = md.merge_append(old, md.tx_history(code, market, fq), label=label,
-                                      rescale=(fq != ''))
+                hist = md.completed_daily(md.tx_history(code, market, fq))
+                out = md.merge_append(old, hist, label=label, rescale=(fq != ''))
         else:
-            out = md.tx_history(code, market, fq, start_year=2016 if fq else 2015)
+            out = md.completed_daily(md.tx_history(code, market, fq, start_year=2016 if fq else 2015))
         md.write_price_csv(out, path, cols)
         print('  %s: %d 行 %s ~ %s' % (label, len(out), out.index[0].date(), out.index[-1].date()))
     except Exception as e:  # noqa: BLE001 - 单标的失败不影响其余标的

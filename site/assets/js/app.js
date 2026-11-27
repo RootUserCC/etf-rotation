@@ -8,12 +8,54 @@
 (() => {
   const STATIC_HOST = /(^|\.)(github\.io|pages\.dev|workers\.dev|netlify\.app|vercel\.app)$/.test(location.hostname);
   const THEME_KEY = 'etf-site-theme';
+  const STRAT_KEY = 'etf-site-strategy';
 
   // 全局状态
   let lastData = null;
   let lastLive = null;
   let liveChart = null;
   let refreshing = false;
+  let activeStratId = (() => {
+    try { return localStorage.getItem(STRAT_KEY) || 'T1'; } catch (e) { return 'T1'; }
+  })();
+
+  function stratPalette() {
+    const light = currentTheme() === 'light';
+    return light
+      ? { 'T1': '#4f46e5', 'T2+': '#d97706', 'T3': '#059669', 'T3+': '#9333ea' }
+      : { 'T1': '#6366f1', 'T2+': '#f59e0b', 'T3': '#10b981', 'T3+': '#c084fc' };
+  }
+
+  function resolveStratId(data) {
+    const order = (data && data.strategy_order) || [];
+    if (order.includes(activeStratId)) return activeStratId;
+    activeStratId = (data && data.default_strategy) || order[0] || 'T1';
+    return activeStratId;
+  }
+
+  function activeView(data) {
+    if (!data) return null;
+    if (!data.strategies) return data;
+    const sid = resolveStratId(data);
+    const s = data.strategies[sid];
+    if (!s) return data;
+    return Object.assign({}, data, {
+      strategy_id: s.id,
+      strategy_name: s.name,
+      strategy_short: s.short_name,
+      strategy_badge: s.badge,
+      exec_mode: s.exec_mode,
+      offense_desc: s.offense_desc,
+      defense_desc: s.defense_desc,
+      exec_desc: s.exec_desc,
+      nav_strat: s.nav_strat,
+      hold_spans: s.hold_spans,
+      trades: s.trades,
+      legs: s.legs,
+      last_signal: s.last_signal,
+      strat_metrics: s.metrics,
+    });
+  }
 
   // 图表实例
   const charts = {
@@ -61,57 +103,57 @@
     const light = currentTheme() === 'light';
     if (light) {
       return {
-        text: '#0f172a',
-        muted: '#64748b',
+        text: '#0b1220',
+        muted: '#475569',
         axisText: '#64748b',
-        axisLine: '#cbd5e1',
-        splitLine: '#edf2f7',
+        axisLine: '#d5dde8',
+        splitLine: '#edf1f7',
         cross: '#94a3b8',
         tooltipBg: 'rgba(255, 255, 255, 0.96)',
-        tooltipBorder: '#cbd5e1',
-        avg: '#0f172a',
-        etf1000: '#d9383a',
-        etfdiv: '#158f6e',
+        tooltipBorder: '#d5dde8',
+        avg: '#0b1220',
+        etf1000: '#e11d48',
+        etfdiv: '#059669',
         etf2000e: '#d97706',
-        accent: '#2563eb',
-        accentFillTop: 'rgba(37, 99, 235, 0.16)',
-        accentFillBot: 'rgba(37, 99, 235, 0.01)',
+        accent: '#4f46e5',
+        accentFillTop: 'rgba(79, 70, 229, 0.16)',
+        accentFillBot: 'rgba(79, 70, 229, 0.01)',
         dif: '#1e293b',
         dea: '#d97706',
-        buy: '#d9383a',
-        sell: '#158f6e',
-        areaAtk: 'rgba(217, 56, 58, 0.08)',
-        areaDiv: 'rgba(21, 143, 110, 0.07)',
-        ddFill: 'rgba(21, 143, 110, 0.14)',
-        zoomFill: 'rgba(37, 99, 235, 0.14)',
-        zoomHandle: '#2563eb',
+        buy: '#e11d48',
+        sell: '#059669',
+        areaAtk: 'rgba(225, 29, 72, 0.075)',
+        areaDiv: 'rgba(5, 150, 105, 0.065)',
+        ddFill: 'rgba(5, 150, 105, 0.14)',
+        zoomFill: 'rgba(79, 70, 229, 0.14)',
+        zoomHandle: '#4f46e5',
       };
     }
     return {
-      text: '#eef2f7',
-      muted: '#8d99ae',
-      axisText: '#7c8aa0',
-      axisLine: '#283244',
-      splitLine: '#1c2433',
+      text: '#f3f6fc',
+      muted: '#9aa7bd',
+      axisText: '#73829c',
+      axisLine: '#232e44',
+      splitLine: 'rgba(148, 163, 184, 0.09)',
       cross: '#64748b',
-      tooltipBg: 'rgba(18, 22, 31, 0.96)',
-      tooltipBorder: '#2d3748',
+      tooltipBg: 'rgba(13, 18, 30, 0.96)',
+      tooltipBorder: '#28354e',
       avg: '#e2e8f0',
-      etf1000: '#ef5350',
-      etfdiv: '#26a69a',
-      etf2000e: '#f59e0b',
-      accent: '#3b82f6',
-      accentFillTop: 'rgba(59, 130, 246, 0.22)',
-      accentFillBot: 'rgba(59, 130, 246, 0.01)',
+      etf1000: '#fb7185',
+      etfdiv: '#34d399',
+      etf2000e: '#fbbf24',
+      accent: '#6366f1',
+      accentFillTop: 'rgba(99, 102, 241, 0.24)',
+      accentFillBot: 'rgba(99, 102, 241, 0.01)',
       dif: '#cbd5e1',
-      dea: '#f59e0b',
-      buy: '#ef5350',
-      sell: '#26a69a',
-      areaAtk: 'rgba(239, 83, 80, 0.10)',
-      areaDiv: 'rgba(38, 166, 154, 0.08)',
-      ddFill: 'rgba(38, 166, 154, 0.16)',
-      zoomFill: 'rgba(59, 130, 246, 0.18)',
-      zoomHandle: '#3b82f6',
+      dea: '#fbbf24',
+      buy: '#fb7185',
+      sell: '#34d399',
+      areaAtk: 'rgba(244, 63, 94, 0.095)',
+      areaDiv: 'rgba(16, 185, 129, 0.075)',
+      ddFill: 'rgba(16, 185, 129, 0.16)',
+      zoomFill: 'rgba(99, 102, 241, 0.20)',
+      zoomHandle: '#6366f1',
     };
   }
 
@@ -205,31 +247,96 @@
       : '<span class="badge badge-div">全部通道正常</span>';
   }
 
+  // ---------- 四策略切换卡片条 & 05区对比总表 ----------
+  function renderStrategyBar(data) {
+    const bar = $('stratBar');
+    if (!bar || !data.strategies) return;
+    const order = data.strategy_order || Object.keys(data.strategies);
+    const curId = resolveStratId(data);
+    const pal = stratPalette();
+    bar.innerHTML = order.map(sid => {
+      const s = data.strategies[sid];
+      if (!s) return '';
+      const m = s.metrics || {};
+      const on = sid === curId;
+      const dot = pal[sid] || '#3b82f6';
+      return `<button type="button" class="strat-tab${on ? ' on' : ''}" data-strat="${sid}" role="tab" aria-selected="${on}">
+        <div class="strat-tab-head">
+          <span class="strat-tab-title"><span class="strat-dot" style="background:${dot}"></span>${s.short_name || sid}</span>
+          <span class="strat-tab-tag">${s.badge || ''}</span>
+        </div>
+        <div class="strat-tab-metrics">
+          <span class="strat-ann">年化 ${fmtPct(m.ann_ret)}</span>
+          <span class="strat-mdd">回撤 ${fmtPct(m.mdd)}</span>
+          <span class="strat-calmar">Calmar ${m.calmar != null ? Number(m.calmar).toFixed(2) : '--'}</span>
+        </div>
+        <div class="strat-tab-codes">
+          <span title="进攻: ${s.offense_desc}">攻: ${s.offense_desc}</span>
+          <span title="防守: ${s.defense_desc}">防: ${s.defense_desc}</span>
+        </div>
+      </button>`;
+    }).join('');
+  }
+
+  function renderStrategyCompareTable(data) {
+    const tbody = $('stratCompareTbody');
+    if (!tbody || !data.strategies) return;
+    const order = data.strategy_order || Object.keys(data.strategies);
+    const curId = resolveStratId(data);
+    const pal = stratPalette();
+    const sub = $('compareTableSub');
+    if (sub && data.dates && data.dates.length) {
+      sub.textContent = `区间 ${data.dates[0]} ~ ${data.dates[data.dates.length - 1]}（${data.dates.length} 交易日），后复权真实成交拆段，含双边万1佣金（点击任意行切换策略）`;
+    }
+    tbody.innerHTML = order.map(sid => {
+      const s = data.strategies[sid];
+      if (!s) return '';
+      const m = s.metrics || {};
+      const on = sid === curId;
+      const dot = pal[sid] || '#3b82f6';
+      return `<tr data-strat="${sid}" class="${on ? 'is-active' : ''}">
+        <td class="text-col"><span style="display:inline-flex;align-items:center;gap:6px"><span class="strat-dot" style="background:${dot}"></span><b>${s.name}</b></span></td>
+        <td class="text-col mono">${s.offense_desc}</td>
+        <td class="text-col mono">${s.defense_desc}</td>
+        <td class="text-col">${s.exec_desc}</td>
+        <td class="pos mono"><b>${fmtPct(m.cum_ret, 1)}</b></td>
+        <td class="pos mono"><b>${fmtPct(m.ann_ret, 2)}</b></td>
+        <td class="neg mono">${fmtPct(m.mdd, 2)}</td>
+        <td class="mono"><b>${m.calmar != null ? Number(m.calmar).toFixed(2) : '--'}</b></td>
+        <td class="mono">${m.sharpe != null ? Number(m.sharpe).toFixed(2) : '--'}</td>
+        <td class="${(m.ytd || 0) >= 0 ? 'pos' : 'neg'} mono">${fmtPct(m.ytd, 2)}</td>
+        <td class="mono">${m.trades != null ? m.trades : '--'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function selectStrategy(sid) {
+    if (!lastData || !lastData.strategies || !lastData.strategies[sid]) return;
+    activeStratId = sid;
+    try { localStorage.setItem(STRAT_KEY, sid); } catch (e) {}
+    renderAll(lastData);
+  }
+
   // ---------- 信号横幅（收盘信号） ----------
   function renderSignalAlert(data) {
     const el = $('sigBanner');
     el.className = 'sig-banner';
     el.innerHTML = '';
     delete el.dataset.live;
-    const D = data.dates, N = D.length - 1, dif = data.dif;
-    if (N < 2) return;
-    const d2 = dif[N - 2], d1 = dif[N - 1], d0 = dif[N];
-    if (d2 == null || d1 == null || d0 == null) return;
-    const last = data.legs[data.legs.length - 1];
-    const holding = last && last.asset === '1000' ? 'atk' : 'div';
-    const buySig = d1 < d2 && d0 > d1 && d0 < 0;
-    const sellSig = d1 > d2 && d0 < d1;
-
+    const ls = data.last_signal;
     const alertSvg = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
-    if (buySig && holding === 'div') {
+    if (!ls) return;
+    const sid = data.strategy_id || 'T1';
+    if (ls.action === 'buy') {
       el.className = 'sig-banner buy';
-      el.innerHTML = `${alertSvg}<span>${D[N]} 收盘触发买入信号（DIF 零下拐头向上）→ 下一交易日开盘：卖出红利低波ETF，买入中证2000增强ETF(159552)</span>`;
-    } else if (sellSig && holding === 'atk') {
+      el.innerHTML = `${alertSvg}<span>【${sid}】${ls.date} 收盘触发买入信号（DIF 零下拐头向上）→ 下一交易日开盘：切换至进攻仓 <b>${ls.next_offense}</b></span>`;
+    } else if (ls.action === 'sell') {
       el.className = 'sig-banner sell';
-      const dp = data.defense_pick;
-      const defName = c => c === '159201' ? '自由现金流ETF(159201)' : '红利低波ETF(512890)';
-      const pickTxt = dp && dp.next_pick ? defName(dp.next_pick) : '红利低波ETF(512890)';
-      el.innerHTML = `${alertSvg}<span>${D[N]} 收盘触发卖出信号（DIF 拐头向下）→ 下一交易日开盘：卖出进攻仓，买入${pickTxt}</span>`;
+      const timing = data.exec_mode === 'a3_asym' ? '今日尾盘（14:55后确认）' : '下一交易日开盘';
+      el.innerHTML = `${alertSvg}<span>【${sid}】${ls.date} 收盘触发卖出信号（通过 S1+S2 检验）→ ${timing}：切换至防守仓 <b>${ls.next_defense}</b></span>`;
+    } else if (ls.blocked_reason) {
+      el.className = 'sig-banner info';
+      el.innerHTML = `${alertSvg}<span>【${sid}】${ls.date} 880003 DIF 拐头向下，但被防洗盘过滤拦截（${ls.blocked_reason}）→ 维持当前仓位不动</span>`;
     }
   }
 
@@ -245,28 +352,61 @@
       const roleEl = $('posRoleBadge');
       roleEl.className = 'badge ' + (isAtk ? 'badge-atk' : 'badge-div');
       roleEl.textContent = isAtk ? '当前持仓 · 进攻仓' : '当前持仓 · 防守仓';
+      $('posModeBadge').textContent = `${data.strategy_id || 'T1'} · ${data.strategy_badge || 'S1+S2'}`;
 
-      const name = last.asset_name || (isAtk ? '中证2000增强' : '红利低波ETF');
-      const code = isAtk ? (name.includes('2000') ? '159552' : '512100') : '512890';
-      $('posAssetName').textContent = name;
-      $('posAssetCode').textContent = code;
+      const codes = last.codes || [];
+      const isMulti = codes.length > 1;
+      if (!isMulti && codes.length === 1) {
+        $('posAssetName').textContent = codes[0].name;
+        $('posAssetCode').textContent = codes[0].code;
+      } else {
+        $('posAssetName').textContent = last.asset_name || (isAtk ? '进攻组合' : '防守组合');
+        $('posAssetCode').textContent = isMulti ? `${codes.length}只组合` : '';
+      }
 
       let floatRet = last.ret;
-      let latestPx = last.sell_price;
-      if (liveOverride && !liveOverride.closed && last.buy_price) {
-        const e = (liveOverride.etfs || []).find(x => x.code === code)
-          || (liveOverride.etfs || []).find(x => x.code === '512100');
-        if (e && e.price != null) {
-          latestPx = e.price;
-          floatRet = e.price / last.buy_price - 1 - 0.0002;
+      let priceDisplay = `${last.buy_price_text || fmtNum(last.buy_price, 3)} → ${last.sell_price_text || fmtNum(last.sell_price, 3)}`;
+      const liveMap = {};
+      if (liveOverride && !liveOverride.closed) {
+        for (const e of (liveOverride.etfs || [])) {
+          if (e && e.price != null) liveMap[e.code] = e.price;
         }
       }
+
+      if (codes.length) {
+        let hasLive = false;
+        let wSum = 0, wRet = 0;
+        const pills = codes.map(item => {
+          const lp = liveMap[item.code] != null ? liveMap[item.code] : item.last_price;
+          if (liveMap[item.code] != null) hasLive = true;
+          const r = item.buy_price ? (lp / item.buy_price - 1) : 0;
+          wSum += item.weight;
+          wRet += item.weight * r;
+          return `<span class="holding-pill"><b>${Math.round(item.weight * 100)}% ${item.code}</b> ${item.name} <span>${fmtNum(item.buy_price, 3)}→${fmtNum(lp, 3)}</span></span>`;
+        });
+        $('posHoldings').innerHTML = isMulti ? pills.join('') : '';
+        if (hasLive && wSum > 0) {
+          floatRet = wRet / wSum - 0.0002;
+          if (!isMulti) {
+            const c0 = codes[0];
+            const lp = liveMap[c0.code] != null ? liveMap[c0.code] : c0.last_price;
+            priceDisplay = `${fmtNum(c0.buy_price, 3)} → ${fmtNum(lp, 3)}`;
+          } else {
+            priceDisplay = '见上方组合明细';
+          }
+        } else if (isMulti) {
+          priceDisplay = '见上方组合明细';
+        }
+      } else {
+        $('posHoldings').innerHTML = '';
+      }
+
       const retEl = $('posFloatRet');
       retEl.textContent = fmtPct(floatRet);
       retEl.className = 'pos-ret-val ' + (floatRet >= 0 ? 'up' : 'down');
 
       $('posBuyDate').textContent = last.buy_date;
-      $('posPrices').textContent = `${fmtNum(last.buy_price, 3)} → ${fmtNum(latestPx, 3)}`;
+      $('posPrices').textContent = priceDisplay;
       $('posDays').textContent = `${last.days} 天`;
       $('posNav').textContent = `${data.nav_strat[N].toFixed(3)}x`;
     } else {
@@ -275,6 +415,7 @@
       $('posRoleBadge').textContent = '空仓';
       $('posAssetName').textContent = '当前无持仓';
       $('posAssetCode').textContent = '';
+      $('posHoldings').innerHTML = '';
       $('posFloatRet').textContent = '--';
     }
 
@@ -321,29 +462,34 @@
     difEl.className = 'sv ' + (downDays ? 'down' : upDays ? 'up' : '');
     $('sigDifSub').textContent = streak;
 
-    // DEA & MACD 柱状态
-    const macdNow = (difNow != null && deaNow != null) ? (difNow - deaNow) * 2 : null;
-    const macdPrev = (N > 0 && data.dif[N - 1] != null && data.dea[N - 1] != null)
-      ? (data.dif[N - 1] - data.dea[N - 1]) * 2 : null;
-    let barTxt = '--', barCls = 'faint';
-    if (macdNow != null) {
-      if (macdNow >= 0) {
-        barTxt = (macdPrev != null && macdNow < macdPrev) ? '红柱缩短' : '红柱扩张';
-        barCls = 'up';
-      } else {
-        barTxt = (macdPrev != null && macdNow > macdPrev) ? '绿柱缩短' : '绿柱扩张';
-        barCls = 'down';
-      }
+    // S1 零下回落比值 & S2 风格比值 R-DIF(12/26) 实时防洗盘状态（盘中优先用 live.json 实时值）
+    let relDrop = data.s1_rel_drop ? data.s1_rel_drop[N] : null;
+    const s1Th = data.s1_threshold || 0.001;
+    let rDifNow = data.r_dif ? data.r_dif[N] : null;
+    let rStrongNow = data.r_strong ? !!data.r_strong[N] : false;
+    if (liveOverride && !liveOverride.closed && liveOverride.sig) {
+      if (liveOverride.sig.s1_rel_drop != null) relDrop = liveOverride.sig.s1_rel_drop;
+      if (liveOverride.sig.r_dif != null) rDifNow = liveOverride.sig.r_dif;
+      if (liveOverride.sig.r_strong != null) rStrongNow = !!liveOverride.sig.r_strong;
     }
-    $('sigBarTag').innerHTML = `<span class="${barCls}">${barTxt}</span>`;
-    $('sigDeaVal').textContent = deaNow != null ? deaNow.toFixed(4) : '--';
+    const s1Ready = !below || (relDrop != null && relDrop > s1Th);
 
-    let hint = '等待拐点确认';
-    if (below && upDays) hint = '零下回升中，留意买点';
-    else if (below && downDays) hint = '零下寻底，持有防守';
-    else if (!below && upDays) hint = '零上强势延续';
-    else if (downDays) hint = '高位拐头，警惕卖出';
-    $('sigHintSub').textContent = hint;
+    if (rStrongNow) {
+      $('sigBarTag').innerHTML = '<span class="up">S2 屏蔽卖出</span>';
+    } else if (below && !s1Ready) {
+      $('sigBarTag').innerHTML = '<span class="muted">S1 过滤微跌</span>';
+    } else {
+      $('sigBarTag').innerHTML = '<span class="down">卖出通道放行</span>';
+    }
+    $('sigDeaVal').textContent = relDrop != null ? `${(relDrop * 1000).toFixed(2)}‰` : (deaNow != null ? deaNow.toFixed(4) : '--');
+    const rTxt = rDifNow != null ? `R-DIF ${rDifNow >= 0 ? '+' : ''}${rDifNow.toFixed(4)}${rStrongNow ? '(走强)' : ''}` : `DEA ${deaNow != null ? deaNow.toFixed(4) : '--'}`;
+    $('sigHintSub').textContent = `S1阈 ${(s1Th * 1000).toFixed(1)}‰ · ${rTxt}`;
+
+    // 更新 01 走势图执行口径副标题
+    const execHint = $('marketExecHint');
+    if (execHint && data.exec_desc) {
+      execHint.textContent = `${data.strategy_id || 'T1'}：${data.exec_desc} · 攻 ${data.offense_desc || ''} / 防 ${data.defense_desc || ''}`;
+    }
 
     // 上次换仓 & 防守池择优
     const lastTrade = data.trades[data.trades.length - 1];
@@ -530,7 +676,7 @@
 
     charts.market.setOption({
       animation: false,
-      textStyle: { color: T.text, fontFamily: 'Inter, PingFang SC, sans-serif' },
+      textStyle: { color: T.text, fontFamily: '"Plus Jakarta Sans", "Noto Sans SC", sans-serif' },
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'cross', lineStyle: { color: T.cross, type: 'dashed' }, crossStyle: { color: T.cross } },
@@ -681,13 +827,70 @@
     }, true);
   }
 
-  // ---------- 图表 2：策略净值对比曲线 ----------
+  // ---------- 图表 2：四策略净值同屏对比曲线 ----------
   function renderNavChart(data) {
     const T = chartTheme();
     if (!charts.nav) charts.nav = echarts.init($('navChart'));
     const D = data.dates;
     const { atkNav, divNav } = buildBenchNavs(data);
     const startPct = calcZoomStart(D.length, navRangeDays);
+    const pal = stratPalette();
+    const curId = resolveStratId(data);
+    const order = (data.strategies && data.strategy_order) ? data.strategy_order : [];
+
+    const legendNames = [];
+    const seriesList = [];
+
+    if (order.length) {
+      for (const sid of order) {
+        const s = data.strategies[sid];
+        if (!s) continue;
+        const isActive = sid === curId;
+        const col = pal[sid] || T.accent;
+        const label = s.short_name || sid;
+        legendNames.push(label);
+        const item = {
+          name: label,
+          type: 'line',
+          data: s.nav_strat,
+          symbol: 'none',
+          z: isActive ? 5 : 3,
+          lineStyle: { width: isActive ? 2.6 : 1.5, color: col, opacity: isActive ? 1 : 0.72 },
+          itemStyle: { color: col },
+          sampling: 'lttb', large: true, largeThreshold: 400
+        };
+        if (isActive) {
+          item.areaStyle = {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: T.accentFillTop },
+              { offset: 1, color: T.accentFillBot }
+            ])
+          };
+        }
+        seriesList.push(item);
+      }
+    } else {
+      legendNames.push('轮动策略');
+      seriesList.push({
+        name: '轮动策略', type: 'line', data: data.nav_strat, symbol: 'none',
+        lineStyle: { width: 2.2, color: T.accent }, itemStyle: { color: T.accent },
+        sampling: 'lttb', large: true, largeThreshold: 400
+      });
+    }
+
+    legendNames.push('159552(拼接)持有', '512890红利低波持有');
+    seriesList.push(
+      {
+        name: '159552(拼接)持有', type: 'line', data: atkNav, symbol: 'none',
+        lineStyle: { width: 1.2, type: 'dashed', color: T.etf2000e, opacity: 0.75 }, itemStyle: { color: T.etf2000e },
+        sampling: 'lttb', large: true, largeThreshold: 400
+      },
+      {
+        name: '512890红利低波持有', type: 'line', data: divNav, symbol: 'none',
+        lineStyle: { width: 1.2, type: 'dashed', color: T.etfdiv, opacity: 0.75 }, itemStyle: { color: T.etfdiv },
+        sampling: 'lttb', large: true, largeThreshold: 400
+      }
+    );
 
     charts.nav.setOption({
       animation: false,
@@ -709,8 +912,9 @@
         }
       },
       legend: {
-        data: ['轮动策略', '进攻仓持有(拼接)', '红利低波持有'],
-        top: 6, left: 'center', textStyle: { color: T.muted, fontSize: 12 }, itemWidth: 14, itemHeight: 8
+        data: legendNames,
+        top: 6, left: 'center', type: window.innerWidth < 760 ? 'scroll' : 'plain',
+        textStyle: { color: T.muted, fontSize: 12 }, itemWidth: 14, itemHeight: 8
       },
       grid: { left: 54, right: 24, top: 46, bottom: 48 },
       xAxis: {
@@ -736,29 +940,7 @@
           dataBackground: { lineStyle: { color: T.splitLine }, areaStyle: { color: T.splitLine } }
         }
       ],
-      series: [
-        {
-          name: '轮动策略', type: 'line', data: data.nav_strat, symbol: 'none',
-          lineStyle: { width: 2.2, color: T.accent }, itemStyle: { color: T.accent },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: T.accentFillTop },
-              { offset: 1, color: T.accentFillBot }
-            ])
-          },
-          sampling: 'lttb', large: true, largeThreshold: 400
-        },
-        {
-          name: '进攻仓持有(拼接)', type: 'line', data: atkNav, symbol: 'none',
-          lineStyle: { width: 1.4, color: T.etf2000e }, itemStyle: { color: T.etf2000e },
-          sampling: 'lttb', large: true, largeThreshold: 400
-        },
-        {
-          name: '红利低波持有', type: 'line', data: divNav, symbol: 'none',
-          lineStyle: { width: 1.4, color: T.etfdiv }, itemStyle: { color: T.etfdiv },
-          sampling: 'lttb', large: true, largeThreshold: 400
-        }
-      ]
+      series: seriesList
     }, true);
   }
 
@@ -1136,14 +1318,16 @@
     $('legsTbody').innerHTML = legs.map(l => {
       const isAtk = l.asset === '1000';
       const badge = isAtk
-        ? `<span class="badge badge-atk">${l.asset_name || '中证1000ETF'}</span>`
-        : '<span class="badge badge-div">红利低波ETF</span>';
+        ? `<span class="badge badge-atk">${l.asset_name || '进攻仓'}</span>`
+        : `<span class="badge badge-div">${l.asset_name || '防守仓'}</span>`;
+      const bp = l.buy_price_text || fmtNum(l.buy_price, 3);
+      const sp = l.sell_price_text || fmtNum(l.sell_price, 3);
       return `<tr class="${isAtk ? 'buy' : 'sell'}${l.open ? ' row-open' : ''}">
         <td>${badge}</td>
         <td>${l.buy_date}</td>
-        <td>${fmtNum(l.buy_price, 3)}</td>
+        <td class="mono">${bp}</td>
         <td>${l.open ? '<span class="badge badge-accent">持有中</span>' : l.sell_date}</td>
-        <td>${fmtNum(l.sell_price, 3)}</td>
+        <td class="mono">${sp}</td>
         <td>${l.days}</td>
         <td class="${l.ret < 0 ? 'neg' : 'pos'}">${fmtPct(l.ret)}${l.open ? ' 浮' : ''}</td>
         <td class="${l.cum < 0 ? 'neg' : 'pos'}">${fmtPct(l.cum)}</td>
@@ -1162,16 +1346,17 @@
       const isBuy = t.action === 'buy';
       const idx = D.indexOf(t.sig_date);
       const dif = idx >= 0 ? data.dif[idx] : t.dif;
-      const atk = t.asset_name || '进攻仓';
-      const op = isBuy
-        ? `卖出 红利低波ETF → 买入 <b>${atk}</b>`
-        : `卖出 ${atk} → 买入 <b>红利低波ETF</b>`;
+      const op = (t.sell_desc && t.buy_desc)
+        ? `卖出 ${t.sell_desc} → 买入 <b>${t.buy_desc}</b>`
+        : (isBuy ? `卖出 防守仓 → 买入 <b>${t.asset_name || '进攻仓'}</b>` : `卖出 ${t.asset_name || '进攻仓'} → 买入 <b>防守仓</b>`);
+      const timing = t.exec_timing ? ` <span class="faint">${t.exec_timing}</span>` : '';
+      const px = t.price_text || fmtNum(t.price, 3);
       return `<tr class="${isBuy ? 'buy' : 'sell'}">
         <td>${isBuy ? '<span class="badge badge-atk">买入进攻</span>' : '<span class="badge badge-div">切换防守</span>'}</td>
         <td>${t.sig_date}</td>
-        <td>${t.date}</td>
+        <td>${t.date}${timing}</td>
         <td class="text-col">${op}</td>
-        <td>${fmtNum(t.price, 3)}</td>
+        <td class="mono">${px}</td>
         <td>${dif == null ? '-' : Number(dif).toFixed(4)}</td>
         <td class="${(t.leg_ret || 0) < 0 ? 'neg' : 'pos'}">${t.leg_ret == null ? '-' : fmtPct(t.leg_ret)}</td>
       </tr>`;
@@ -1191,9 +1376,9 @@
         banner.className = 'sig-banner';
         banner.innerHTML = '';
         delete banner.dataset.live;
-        if (lastData) renderSignalAlert(lastData);
+        if (lastData) renderSignalAlert(activeView(lastData));
       }
-      if (lastData) renderStatusCards(lastData, null);
+      if (lastData) renderStatusCards(activeView(lastData), null);
       return;
     }
 
@@ -1224,7 +1409,7 @@
       liveChart = { date: d.today, avg: a.value, ohlc: a.ohlc || null, etfs: prices, dif: sig.dif, dea: sig.dea };
       patchLiveChart();
     }
-    if (lastData) renderStatusCards(lastData, d);
+    if (lastData) renderStatusCards(activeView(lastData), d);
   }
 
   function patchLiveChart() {
@@ -1258,34 +1443,40 @@
   // ---------- 全量渲染与图表缩放 ----------
   function renderAll(data) {
     lastData = data;
+    const view = activeView(data);
     $('err').style.display = 'none';
-    renderFreshness(data);
-    renderSignalAlert(data);
-    renderStatusCards(data, lastLive);
-    renderKPIs(data);
-    renderMarketChart(data);
+    renderFreshness(view);
+    renderStrategyBar(data);
+    renderStrategyCompareTable(data);
+    renderSignalAlert(view);
+    renderStatusCards(view, lastLive);
+    renderKPIs(view);
+    renderMarketChart(view);
     renderNavChart(data);
-    renderReturns(data);
-    renderAssetReturns(data);
-    renderDrawdown(data);
-    renderRolling(data);
-    renderDaily(data);
-    renderDist(data);
-    renderLegStats(data);
-    populateYearSelect(data);
-    renderLedger(data);
+    renderReturns(view);
+    renderAssetReturns(view);
+    renderDrawdown(view);
+    renderRolling(view);
+    renderDaily(view);
+    renderDist(view);
+    renderLegStats(view);
+    populateYearSelect(view);
+    renderLedger(view);
     resizeAll();
     if (lastLive && !lastLive.closed) patchLive(lastLive);
   }
 
   function rerenderCharts() {
     if (!lastData) return;
-    renderMarketChart(lastData);
+    const view = activeView(lastData);
+    renderStrategyBar(lastData);
+    renderStrategyCompareTable(lastData);
+    renderMarketChart(view);
     renderNavChart(lastData);
-    renderDrawdown(lastData);
-    renderRolling(lastData);
-    renderDaily(lastData);
-    renderDist(lastData);
+    renderDrawdown(view);
+    renderRolling(view);
+    renderDaily(view);
+    renderDist(view);
     if (liveChart && lastLive && !lastLive.closed) patchLiveChart();
   }
 
@@ -1413,21 +1604,39 @@
       sections.forEach(s => io.observe(s));
     }
 
+    // 四策略切换（顶部卡片条 + 05区对比总表点击联动）
+    const stratBar = $('stratBar');
+    if (stratBar) {
+      stratBar.addEventListener('click', e => {
+        const b = e.target.closest('[data-strat]');
+        if (!b) return;
+        selectStrategy(b.dataset.strat);
+      });
+    }
+    const compareTbody = $('stratCompareTbody');
+    if (compareTbody) {
+      compareTbody.addEventListener('click', e => {
+        const tr = e.target.closest('tr[data-strat]');
+        if (!tr) return;
+        selectStrategy(tr.dataset.strat);
+      });
+    }
+
     // 自定义区间收益
     $('quickDays').addEventListener('click', e => {
       const b = e.target.closest('button');
       if (!b) return;
       customMode = 'days';
       $('kpiDays').value = b.dataset.d;
-      if (lastData) updateCustomKPI(lastData);
+      if (lastData) updateCustomKPI(activeView(lastData));
     });
     $('kpiDays').addEventListener('input', () => {
       customMode = 'days';
-      if (lastData) updateCustomKPI(lastData);
+      if (lastData) updateCustomKPI(activeView(lastData));
     });
     $('kpiDate').addEventListener('change', () => {
       customMode = 'date';
-      if (lastData) updateCustomKPI(lastData);
+      if (lastData) updateCustomKPI(activeView(lastData));
     });
 
     // 走势图区间 & 折线/K线
@@ -1451,7 +1660,7 @@
         x.setAttribute('aria-pressed', String(active));
       }
       if (lastData) {
-        renderMarketChart(lastData);
+        renderMarketChart(activeView(lastData));
         if (liveChart && lastLive && !lastLive.closed) patchLiveChart();
       }
     });
@@ -1503,11 +1712,11 @@
       if (!b) return;
       legFilter = b.dataset.f;
       for (const x of b.parentElement.children) x.classList.toggle('on', x === b);
-      if (lastData) renderLedger(lastData);
+      if (lastData) renderLedger(activeView(lastData));
     });
     $('ledgerYear').addEventListener('change', e => {
       ledgerYear = e.target.value;
-      if (lastData) renderLedger(lastData);
+      if (lastData) renderLedger(activeView(lastData));
     });
 
     // 窗口缩放

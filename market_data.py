@@ -24,6 +24,8 @@ SYMBOLS = [
     ('159915', 0, '创业板ETF'),
     ('510300', 1, '沪深300ETF'),
     ('159201', 0, '自由现金流ETF'),
+    ('518880', 1, '黄金ETF'),
+    ('513100', 1, '纳指ETF'),
 ]
 INDEXES = [
     ('000001', 1, '上证指数'),
@@ -283,8 +285,8 @@ def write_avg_csv(df, path):
 def merge_append(old, new, label='', rescale=True):
     """只把 old 最后日期之后的新行追加进来，历史行不动。
 
-    有重叠时按最后重叠日收盘比值缩放新行：不同数据源的复权基准不同（腾讯后复权
-    与通达信自算在除息日口径略有差异），缩放后接缝无跳变。
+    有重叠时按最近最多 20 个重叠日收盘比值的中位数缩放新行，并校验比值一致性：
+    防止单日盘中未收盘价或上游临时回退不复权导致复权系数雪崩跳变。
     rescale=False 用于平均股价这类"值本身就是真值"的序列，只在重叠校验后直接追加。
     """
     if old is None or old.empty:
@@ -294,8 +296,15 @@ def merge_append(old, new, label='', rescale=True):
     if not len(common):
         raise ValueError('%s 与本地数据无重叠，需要全量回补' % label)
     if rescale:
-        d = common[-1]
-        ratio = float(old.loc[d, 'close']) / float(new.loc[d, 'close'])
+        tail = common[-20:]
+        ratios = (old.loc[tail, 'close'].astype(float) / new.loc[tail, 'close'].astype(float)).dropna()
+        if ratios.empty:
+            raise ValueError('%s 重叠区间无有效收盘价' % label)
+        ratio = float(ratios.median())
+        if len(ratios) >= 3 and ratio > 0:
+            spread = float((ratios.max() - ratios.min()) / ratio)
+            if spread > 0.03:
+                raise RuntimeError('%s 重叠区间复权比值波动 %.1f%%（异常），拒绝拼接' % (label, spread * 100))
         if abs(ratio - 1) > 1e-9:
             num = new.select_dtypes('number').columns
             new = new.copy()
