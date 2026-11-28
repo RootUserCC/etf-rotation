@@ -8,6 +8,7 @@
 import datetime as dt
 import json
 import os
+import threading
 import time
 
 import pandas as pd
@@ -128,17 +129,19 @@ def _holding():
     return 'atk' if legs[-1].get('asset') == '1000' else 'div'
 
 
-def signal_preview(closes, live_value=None, ratio_ctx=None, etfs=None):
-    """在历史收盘序列上追加“当前值”，返回 dif/dea/S1/S2 与增强信号预览。
+def signal_preview(closes, live_value=None, ratio_ctx=None, etfs=None, live_ohlc=None, now=None):
+    """在历史收盘序列上追加“当前值”，返回 dif/dea/S1/S2 与增强信号预览（含盘中分时 x_turn 买点监控）。
 
     口径与 export_json.py 完全一致：
     - 买：880003 DIF(17/34) 零下拐头向上
     - 卖：DIF 拐头向下 + S1(DIF>0 或 20日回落/close > 0.0010) + S2(非 R-DIF(12/26) 零上走强)
+    - 盘中分时买点：防守期且昨日 DIF 零下下行时，实时监控 880003 过拐点价 x_turn + 阳线防高开低走 + ≥10:00 节点
     """
     if closes is None or len(closes) < 40 or live_value is None:
         return {'preview': 'none', 'holding': _holding(),
                 'note': '休市或无实时平均股价，暂无预览'}
-    today = pd.Timestamp.now().normalize()
+    now_dt = now or dt.datetime.now()
+    today = pd.Timestamp(now_dt.date())
     s = closes.copy()
     s.loc[today] = live_value
     s = s.sort_index()
@@ -146,13 +149,17 @@ def signal_preview(closes, live_value=None, ratio_ctx=None, etfs=None):
     last = sig.iloc[-1]
     dif_now, dea_now = float(last['dif']), float(last['dea'])
 
-    # DIF(x) = (a17-a34)*x + C，用前一日的 EMA 反解
+    # DIF(x) = (a17-a34)*x + C，用严格早于今日的历史收盘 EMA 反解（零前视）
     prev = s.iloc[:-1]
     e17, e34 = ema(prev, 17), ema(prev, 34)
+    dif_prev_series = e17 - e34
     a17, a34 = 2.0 / 18, 2.0 / 35
     c = (1 - a17) * float(e17.iloc[-1]) - (1 - a34) * float(e34.iloc[-1])
-    dif_prev = float(sig['dif'].iloc[-2]) if len(sig) > 1 else dif_now
+    dif_prev = float(dif_prev_series.iloc[-1])
+    dif_prev2 = float(dif_prev_series.iloc[-2]) if len(dif_prev_series) > 1 else dif_prev
+    prev_close = float(prev.iloc[-1])
     x_turn = (dif_prev - c) / (a17 - a34)
+    x_turn_buf = x_turn * 1.005
     x_zero = (0.0 - c) / (a17 - a34)
     cur = float(s.iloc[-1])
 
@@ -198,6 +205,95 @@ def signal_preview(closes, live_value=None, ratio_ctx=None, etfs=None):
     def pct(x):
         return None if cur == 0 else round((x / cur - 1) * 100, 2)
 
+    def pct_base(x):
+        return None if prev_close == 0 else round((x / prev_close - 1) * 100, 2)
+
+    # 盘中分时买点评估（日线 x_turn 投影 + 阳线防高开低走 + ≥10:00 节点）
+    avg_open = float(live_ohlc[0]) if live_ohlc and len(live_ohlc) >= 1 and live_ohlc[0] else None
+    avg_yang = bool(avg_open is not None and cur > avg_open)
+    not_gap_trap = bool(avg_open is None or avg_open < x_turn)
+
+    etf_map = {e['code']: e for e in (etfs or []) if e and e.get('code')}
+    e552 = etf_map.get('159552')
+    if e552 and e552.get('price') and e552.get('open'):
+        etf_yang = bool(e552['price'] > e552['open'])
+    else:
+        etf_yang = avg_yang if avg_open is not None else True
+
+    eligible_buy = bool(holding == 'div' and dif_prev < 0 and dif_prev < dif_prev2)
+    cross_turn = bool(cur >= x_turn and cur < x_zero)
+    cross_buf = bool(cur >= x_turn_buf and cur < x_zero)
+    t_now = now_dt.time()
+    time_ok = bool(t_now >= dt.time(10, 0))
+    if t_now < dt.time(10, 30):
+        next_cp = '10:30'
+    elif t_now < dt.time(11, 30):
+        next_cp = '11:30'
+    elif t_now < dt.time(14, 0):
+        next_cp = '14:00'
+    else:
+        next_cp = '14:55'
+    in_cp_window = bool(
+        (dt.time(10, 25) <= t_now <= dt.time(10, 35))
+        or (dt.time(11, 25) <= t_now <= dt.time(13, 5))
+        or (dt.time(13, 55) <= t_now <= dt.time(14, 5))
+    )
+
+    yang_ok = bool((avg_open is None or avg_yang) and etf_yang)
+    if holding == 'atk':
+        ib_status = 'holding_atk'
+        ib_label = '已持进攻仓'
+        ib_hint = f'当前持进攻仓，无需分时买点；DIF 转降临界价 {x_turn:.2f}（距现价 {pct(x_turn):+.2f}%）'
+    elif not eligible_buy:
+        ib_status = 'standby'
+        ib_label = '非零下待买态'
+        ib_hint = '昨日 DIF 未处于零下下行状态（或已拐头待执行），无需盘中提前触发'
+    elif cross_turn and not yang_ok:
+        ib_status = 'blocked_gap'
+        ib_label = '阴线/高开低走拦截'
+        ib_hint = (f'虽过拐点价 {x_turn:.2f}，但当日走阴（880003 或 159552 低于开盘价），'
+                   '按回测纪律拦截以规避 11-24 类高开低走陷阱')
+    elif cross_turn and not time_ok:
+        ib_status = 'wait_time'
+        ib_label = '10:00 前暂观察'
+        ib_hint = f'已过拐点价 {x_turn:.2f} 且走阳，跳过开盘前 30 分钟脉冲，待 10:00 后（推荐 10:30/11:30 节点）站稳再买'
+    elif cross_turn:
+        ib_status = 'triggered'
+        ib_strong = bool(cross_buf and not_gap_trap)
+        ib_label = '盘中买点强触发' if ib_strong else '盘中买点触发'
+        cp_tip = '当前正处推荐检查节点，可冷静限价切入进攻仓' if in_cp_window else f'建议在 {next_cp} 节点（最简 11:30→13:00）限价切入进攻仓'
+        gap_warn = '' if not_gap_trap else '（注：今日高开过线，建议先半仓或等 11:30 确认）'
+        ib_hint = (f'880003 站上拐点价 {x_turn:.2f} 且当日阳线！{cp_tip}{gap_warn}；'
+                   '若 15:00 收盘跌回拐点下方，次日 09:35 认错卖出转现金/T+0 货基防锁仓')
+    else:
+        ib_status = 'watch'
+        ib_label = '防守待机监控'
+        ib_hint = (f'防守期监控中：880003 距拐点价 {x_turn:.2f} 还差 {pct(x_turn):+.2f}%'
+                   f'（+0.5% 缓冲价 {x_turn_buf:.2f}），推荐盯 10:30 / 11:30 / 14:00 节点')
+
+    intraday_buy = {
+        'status': ib_status,
+        'label': ib_label,
+        'eligible': eligible_buy,
+        'x_turn': round(x_turn, 2),
+        'x_turn_pct_cur': pct(x_turn),
+        'x_turn_pct_base': pct_base(x_turn),
+        'x_turn_buf': round(x_turn_buf, 2),
+        'x_turn_buf_pct_cur': pct(x_turn_buf),
+        'x_zero': round(x_zero, 2),
+        'avg_open': round(avg_open, 2) if avg_open is not None else None,
+        'cross_turn': cross_turn,
+        'cross_buf': cross_buf,
+        'avg_yang': avg_yang,
+        'etf_yang': etf_yang,
+        'yang_ok': yang_ok,
+        'not_gap_trap': not_gap_trap,
+        'time_ok': time_ok,
+        'in_cp_window': in_cp_window,
+        'next_cp': next_cp,
+        'hint': ib_hint,
+    }
+
     return {
         'dif': round(dif_now, 4), 'dea': round(dea_now, 4),
         'macd': round((dif_now - dea_now) * 2, 4),
@@ -209,6 +305,7 @@ def signal_preview(closes, live_value=None, ratio_ctx=None, etfs=None):
         'holding': holding, 'preview': preview, 'note': note,
         'turn_price': round(x_turn, 2), 'turn_pct': pct(x_turn),
         'zero_price': round(x_zero, 2), 'zero_pct': pct(x_zero),
+        'intraday_buy': intraday_buy,
     }
 
 
@@ -224,6 +321,7 @@ def _etf_quotes():
             continue
         out.append({
             'code': code, 'name': names.get(code, q['name'][:8]),
+            'open': round(q['open'], 3) if q.get('open') else None,
             'price': round(q['price'], 3),
             'chg_pct': round((q['price'] / q['prev'] - 1) * 100, 2),
         })
@@ -261,80 +359,139 @@ def _closed_doc(closes):
     }
 
 
-def main():
-    os.makedirs(SITE_DIR, exist_ok=True)
-    closes = _avg_closes()
-    ratio_ctx = _load_ratio_history()
-    live_avg = None
-    live_ohlc = None
-    live_date = ''
-    # 热启动：若已有当日实时均价缓存，先承接避免重启瞬间空白
-    prev_live = _load_json(LIVE_FILE)
-    if prev_live.get('today') == dt.date.today().isoformat():
-        pa = prev_live.get('avg') or {}
-        if pa.get('value') is not None:
-            live_avg = float(pa['value'])
-            live_ohlc = pa.get('ohlc')
-            live_date = prev_live.get('today', '')
-    avg_ts = 0.0
-    avg_err = ''
-    while True:
-        try:
+class LiveEngine:
+    """按需实时行情引擎：仅在网页打开请求 /api/live 时按节流间隔抓取，无访问时零网络请求、零 CPU。"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._closes = None
+        self._ratio_ctx = None
+        self._live_avg = None
+        self._live_ohlc = None
+        self._live_date = ''
+        self._avg_ts = 0.0
+        self._avg_err = ''
+        self._etfs = []
+        self._quote_src = 'sina'
+        self._etf_ts = 0.0
+        self._closed_ts = 0.0
+        self._cached_doc = None
+        self._warm_load()
+
+    def _warm_load(self):
+        prev_live = _load_json(LIVE_FILE)
+        if prev_live.get('today') == dt.date.today().isoformat():
+            pa = prev_live.get('avg') or {}
+            if pa.get('value') is not None:
+                self._live_avg = float(pa['value'])
+                self._live_ohlc = pa.get('ohlc')
+                self._live_date = prev_live.get('today', '')
+
+    def get_snapshot(self, force: bool = False) -> dict:
+        with self._lock:
             now = time.time()
             if not md.is_trading_time():
-                _write(_closed_doc(_avg_closes()))
-                time.sleep(60)
-                continue
+                if force or self._cached_doc is None or not self._cached_doc.get('closed') or (now - self._closed_ts >= 30):
+                    doc = _closed_doc(_avg_closes())
+                    self._cached_doc = doc
+                    self._closed_ts = now
+                    try:
+                        os.makedirs(SITE_DIR, exist_ok=True)
+                        _write(doc)
+                    except Exception:  # noqa: BLE001
+                        pass
+                return self._cached_doc
 
-            avg_interval = 10 if live_avg is None else AVG_SEC
-            if now - avg_ts >= avg_interval:
+            # 交易时段内：仅按节流间隔刷新（ETF 5s，平均股价 60s）
+            if not force and self._cached_doc and not self._cached_doc.get('closed') and (now - self._etf_ts < LOOP_SEC):
+                return self._cached_doc
+
+            if self._closes is None:
+                self._closes = _avg_closes()
+            if self._ratio_ctx is None:
+                self._ratio_ctx = _load_ratio_history()
+
+            avg_interval = 10 if self._live_avg is None else AVG_SEC
+            if force or (now - self._avg_ts >= avg_interval):
                 try:
-                    daily, pre = md.em_avg_daily()
+                    daily, _ = md.em_avg_daily()
                     day = daily.index[-1]
                     row = daily.iloc[-1]
-                    live_avg = float(row['close'])
-                    live_ohlc = [round(float(row['open']), 2), round(float(row['high']), 2),
-                                 round(float(row['low']), 2), round(float(row['close']), 2)]
-                    live_date = str(day.date())
-                    avg_err = ''
+                    self._live_avg = float(row['close'])
+                    self._live_ohlc = [round(float(row['open']), 2), round(float(row['high']), 2),
+                                       round(float(row['low']), 2), round(float(row['close']), 2)]
+                    self._live_date = str(day.date())
+                    self._avg_err = ''
                 except Exception as e:  # noqa: BLE001 - 东财限流时保留上一笔
-                    avg_err = repr(e)[:80]
-                avg_ts = now
-                closes = _avg_closes()
-                ratio_ctx = _load_ratio_history()
+                    self._avg_err = repr(e)[:80]
+                self._avg_ts = now
+                self._closes = _avg_closes()
+                self._ratio_ctx = _load_ratio_history()
 
-            etfs, quote_src = _etf_quotes()
+            try:
+                self._etfs, self._quote_src = _etf_quotes()
+            except Exception:  # noqa: BLE001 - 快照临时异常保留上一次报价
+                pass
+            self._etf_ts = now
+
             doc = {
                 'time': dt.datetime.now().strftime('%H:%M:%S'),
                 'closed': False,
-                'today': live_date,
-                'avg': {'value': round(live_avg, 2) if live_avg else None,
-                        'ohlc': live_ohlc,
+                'today': self._live_date,
+                'avg': {'value': round(self._live_avg, 2) if self._live_avg else None,
+                        'ohlc': self._live_ohlc,
                         'prev': None, 'chg_pct': None, 'date': '',
-                        'source': 'eastmoney:800005' if not avg_err else 'cache',
-                        'error': avg_err},
-                'sig': signal_preview(closes, live_avg, ratio_ctx=ratio_ctx, etfs=etfs) or {},
-                'etfs': etfs,
-                'quote_source': quote_src,
-                'stale': bool(avg_err),
+                        'source': 'eastmoney:800005' if not self._avg_err else 'cache',
+                        'error': self._avg_err},
+                'sig': signal_preview(self._closes, self._live_avg, ratio_ctx=self._ratio_ctx,
+                                      etfs=self._etfs, live_ohlc=self._live_ohlc) or {},
+                'etfs': self._etfs,
+                'quote_source': self._quote_src,
+                'stale': bool(self._avg_err),
+                'mode': 'on_demand',
             }
             base = _load_json(os.path.join(SITE_DIR, 'data.json'))
             val = doc['avg']['value']
-            if val and closes is not None and len(closes) > 1:
-                doc['avg']['date'] = str(closes.index[-1].date())
-                doc['avg']['prev'] = round(float(closes.iloc[-1]), 2)
-                doc['avg']['chg_pct'] = round((val / float(closes.iloc[-1]) - 1) * 100, 2)
+            if val and self._closes is not None and len(self._closes) > 1:
+                doc['avg']['date'] = str(self._closes.index[-1].date())
+                doc['avg']['prev'] = round(float(self._closes.iloc[-1]), 2)
+                doc['avg']['chg_pct'] = round((val / float(self._closes.iloc[-1]) - 1) * 100, 2)
             doc['sig']['holding'] = doc['sig'].get('holding') or _holding()
             if not base:
                 doc['stale'] = True
-            _write(doc)
-        except Exception as e:  # noqa: BLE001 - 实时线程任何异常都不能退出
+
+            self._cached_doc = doc
             try:
-                _write({'time': dt.datetime.now().strftime('%H:%M:%S'), 'closed': False,
-                        'error': repr(e)[:120], 'etfs': [], 'sig': {}, 'stale': True})
+                os.makedirs(SITE_DIR, exist_ok=True)
+                _write(doc)
             except Exception:  # noqa: BLE001
                 pass
-        time.sleep(LOOP_SEC)
+            return doc
+
+
+_ENGINE = None
+_ENGINE_LOCK = threading.Lock()
+
+
+def get_live_snapshot(force: bool = False) -> dict:
+    """供 server.py 的 /api/live 按需调用（网页关闭时不执行任何抓取）。"""
+    global _ENGINE
+    with _ENGINE_LOCK:
+        if _ENGINE is None:
+            _ENGINE = LiveEngine()
+    try:
+        return _ENGINE.get_snapshot(force=force)
+    except Exception as e:  # noqa: BLE001
+        return {'time': dt.datetime.now().strftime('%H:%M:%S'), 'closed': False,
+                'error': repr(e)[:120], 'etfs': [], 'sig': {}, 'stale': True}
+
+
+def main():
+    """独立命令行持续轮询模式（常规本地服务由 server.py /api/live 按需触发，无需常驻运行）。"""
+    os.makedirs(SITE_DIR, exist_ok=True)
+    while True:
+        doc = get_live_snapshot()
+        time.sleep(60 if doc.get('closed') else LOOP_SEC)
 
 
 if __name__ == '__main__':

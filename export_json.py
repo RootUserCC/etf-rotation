@@ -11,9 +11,9 @@
 
 四策略标的配置与执行口径（2024-06-28 前进攻腿以 512100 拼接历史，此后切至实盘标的）：
   - T1  ：进攻 100% 159552 ｜ 防守 100% 512890 ｜ 买卖均 T+1 开盘
-  - T2+ ：进攻 60% 159552 + 40% 588220 ｜ 防守 50% (512890/159201 20日动量二选一) + 50% 518880 ｜ 买 T+1 开盘、卖 T 日尾盘
+  - T2+ ：进攻 60% 159552 + 40% 588220 ｜ 防守 100% 512890 ｜ 买 T+1 开盘、卖 T 日尾盘
   - T3  ：进攻 100% 159552 ｜ 防守 34% 512890 + 33% 518880 + 33% 513100 ｜ 买卖均 T+1 开盘
-  - T3+ ：进攻 60% 159552 + 40% 588220 ｜ 防守 34% (512890/159201 20日动量二选一) + 33% 518880 + 33% 513100 ｜ 买 T+1 开盘、卖 T 日尾盘
+  - T3+ ：进攻 60% 159552 + 40% 588220 ｜ 防守 34% 512890 + 33% 518880 + 33% 513100 ｜ 买 T+1 开盘、卖 T 日尾盘
 
 收益按后复权真实成交拆段计算（含双边万1佣金），价格展示使用不复权真实价。
 输出 site/data.json
@@ -53,7 +53,6 @@ ETF_NAMES = {
     '159552': '中证2000增强',
     '588220': '科创100ETF',
     '512890': '红利低波ETF',
-    '159201': '自由现金流ETF',
     '518880': '黄金ETF',
     '513100': '纳指ETF',
 }
@@ -78,12 +77,12 @@ STRATEGY_SPECS = [
         'short_name': 'T2+ 纯国内全栈',
         'badge': 'S1+S2 · A3尾盘卖',
         'offense_mode': 'dual_60_40',
-        'defense_mode': 'cn_201_gold',
+        'defense_mode': '512890',
         'exec_mode': 'a3_asym',
         'offense_desc': '60% 159552 + 40% 588220',
-        'defense_desc': '50% 512890/159201(择优) + 50% 518880',
+        'defense_desc': '100% 512890 红利低波',
         'exec_desc': '买 T+1 开盘 · 卖 T 日尾盘',
-        'summary': '无 QDII 溢价风险，微盘/科创双核 + 红利/黄金防守',
+        'summary': '纯国内极简防守，微盘/科创双核 + 单一红利低波防守',
     },
     {
         'id': 'T3',
@@ -96,7 +95,7 @@ STRATEGY_SPECS = [
         'offense_desc': '100% 159552 中证2000增强',
         'defense_desc': '34% 512890 + 33% 518880 + 33% 513100',
         'exec_desc': '买卖均 T+1 开盘成交',
-        'summary': '无杠杆 Calmar 天花板，红利+黄金+纳指三资产防守',
+        'summary': '无杠杆 Calmar 天花板，红利低波+黄金+纳指三资产防守',
     },
     {
         'id': 'T3+',
@@ -104,10 +103,10 @@ STRATEGY_SPECS = [
         'short_name': 'T3+ 全球全栈',
         'badge': 'S1+S2 · A3尾盘卖',
         'offense_mode': 'dual_60_40',
-        'defense_mode': 'glb_201_333',
+        'defense_mode': 'glb_333',
         'exec_mode': 'a3_asym',
         'offense_desc': '60% 159552 + 40% 588220',
-        'defense_desc': '34% 512890/159201(择优) + 33% 518880 + 33% 513100',
+        'defense_desc': '34% 512890 + 33% 518880 + 33% 513100',
         'exec_desc': '买 T+1 开盘 · 卖 T 日尾盘',
         'summary': '无杠杆最高收益全栈配置（513100 高溢价可切 513500）',
     },
@@ -203,16 +202,6 @@ def compute_enhanced_signals(avg: pd.DataFrame, hfq: dict, idx: pd.DatetimeIndex
     return df
 
 
-def pick_def_201(sig_day: pd.Timestamp, mom890: pd.Series, mom201: pd.Series) -> str:
-    m1 = mom890.get(sig_day, float('nan'))
-    m2 = mom201.get(sig_day, float('nan'))
-    if pd.isna(m2):
-        return '512890'
-    if pd.isna(m1):
-        return '159201'
-    return '512890' if m1 >= m2 else '159201'
-
-
 def offense_weights(day: pd.Timestamp, mode: str) -> dict:
     if day < SWITCH_ATK:
         return {'512100': 1.0}
@@ -221,22 +210,18 @@ def offense_weights(day: pd.Timestamp, mode: str) -> dict:
     return {'159552': 1.0}
 
 
-def defense_weights(sig_day: pd.Timestamp, mode: str, mom890: pd.Series, mom201: pd.Series) -> dict:
+def defense_weights(mode: str) -> dict:
     if mode == '512890':
         return {'512890': 1.0}
-    if mode == 'cn_201_gold':
-        c = pick_def_201(sig_day, mom890, mom201)
-        return {c: 0.5, '518880': 0.5}
+    if mode == 'cn_gold':
+        return {'512890': 0.5, '518880': 0.5}
     if mode == 'glb_333':
         return {'512890': 0.34, '518880': 0.33, '513100': 0.33}
-    if mode == 'glb_201_333':
-        c = pick_def_201(sig_day, mom890, mom201)
-        return {c: 0.34, '518880': 0.33, '513100': 0.33}
     raise ValueError(mode)
 
 
 def simulate_strategy(spec: dict, sig: pd.DataFrame, hfq: dict, raw: dict,
-                      idx: pd.DatetimeIndex, mom890: pd.Series, mom201: pd.Series) -> dict:
+                      idx: pd.DatetimeIndex) -> dict:
     """运行单个策略的精确拆段回测，输出 nav_strat / hold_spans / trades / legs / last_signal"""
     dates = [d.strftime('%Y-%m-%d') for d in idx]
     n = len(idx)
@@ -257,7 +242,7 @@ def simulate_strategy(spec: dict, sig: pd.DataFrame, hfq: dict, raw: dict,
     def_mode = spec['defense_mode']
 
     state = False  # False=防守, True=进攻
-    init_w = defense_weights(idx[0], def_mode, mom890, mom201)
+    init_w = defense_weights(def_mode)
     weights = dict(init_w)
     target_w = dict(init_w)
     nav = np.ones(n, dtype=float)
@@ -311,7 +296,7 @@ def simulate_strategy(spec: dict, sig: pd.DataFrame, hfq: dict, raw: dict,
             state = True
             pending = None
         elif pending == 'sell' and state:
-            new_w = defense_weights(idx[i - 1], def_mode, mom890, mom201)
+            new_w = defense_weights(def_mode)
             did_open = True
             is_trade = True
             state = False
@@ -390,7 +375,7 @@ def simulate_strategy(spec: dict, sig: pd.DataFrame, hfq: dict, raw: dict,
             pending = 'buy'
         elif sell_arr[i] and state:
             if exec_mode == 'a3_asym':
-                new_w = defense_weights(d, def_mode, mom890, mom201)
+                new_w = defense_weights(def_mode)
                 nav[i] *= (1.0 - 2.0 * FEE_ONEWAY)
                 leg_ret = nav[i] / leg_start_nav - 1.0
                 bp_val, bp_txt = price_summary(leg_target_w, leg_entry_px_map, leg_start_i)
@@ -474,7 +459,7 @@ def simulate_strategy(spec: dict, sig: pd.DataFrame, hfq: dict, raw: dict,
     # 最新收盘信号详情
     last_i = n - 1
     next_off = offense_weights(idx[last_i], off_mode)
-    next_def = defense_weights(idx[last_i], def_mode, mom890, mom201)
+    next_def = defense_weights(def_mode)
     blocked_reason = ''
     if sig['s1_blocked'].iloc[last_i]:
         blocked_reason = 'S1 零下回落不足 0.0010（屏蔽假拐头）'
@@ -554,12 +539,9 @@ def main():
 
     sig = compute_enhanced_signals(avg, hfq, idx)
 
-    mom890 = hfq['512890']['close'] / hfq['512890']['close'].shift(20) - 1.0
-    mom201 = hfq['159201']['close'] / hfq['159201']['close'].shift(20) - 1.0
-
     strategies = {}
     for spec in STRATEGY_SPECS:
-        strategies[spec['id']] = simulate_strategy(spec, sig, hfq, raw, idx, mom890, mom201)
+        strategies[spec['id']] = simulate_strategy(spec, sig, hfq, raw, idx)
 
     dates = [d.strftime('%Y-%m-%d') for d in idx]
 
@@ -576,33 +558,43 @@ def main():
         s = df['close']
         return [round(float(s[d]), 3) if d in s.index else None for d in idx]
 
-    # 防守池 512890 / 159201 20日动量状态
-    mom_day = min(hfq['512890'].index[-1], hfq['159201'].index[-1], idx[-1])
-    t2p_legs = strategies['T2+']['legs']
-    in_def_now = bool(t2p_legs and t2p_legs[-1]['asset'] == 'div')
-    holding_def = None
-    if in_def_now:
-        for cd in t2p_legs[-1].get('codes', []):
-            if cd['code'] in ('512890', '159201'):
-                holding_def = cd['code']
-                break
-
-    def _r(x):
-        return None if pd.isna(x) else round(float(x), 4)
-
-    defense_pick = {
-        'mom_date': mom_day.strftime('%Y-%m-%d'),
-        'mom_890': _r(mom890.get(mom_day, float('nan'))),
-        'mom_201': _r(mom201.get(mom_day, float('nan'))),
-        'in_defense': in_def_now,
-        'holding_def': holding_def,
-        'next_pick': pick_def_201(mom_day, mom890, mom201),
-    }
+    defense_pick = None
 
     st = _status()
     etf_last = max(md.completed_daily(hfq['512890']).index[-1],
                    md.completed_daily(hfq['159552']).index[-1])
     avg_stale = bool(st.get('avg_stale') or avg.index[-1] < etf_last)
+
+    # 下一交易日盘中分时买点拐点价预告（基于最新收盘 EMA17/34，开盘前即已知）
+    avg_c_all = avg['close']
+    e17_all = ema(avg_c_all, 17)
+    e34_all = ema(avg_c_all, 34)
+    dif_all = e17_all - e34_all
+    a17, a34 = 2.0 / 18.0, 2.0 / 35.0
+    last_avg_c = float(avg_c_all.iloc[-1])
+    dif_last = float(dif_all.iloc[-1])
+    dif_prev = float(dif_all.iloc[-2]) if len(dif_all) > 1 else dif_last
+    c_next = (1.0 - a17) * float(e17_all.iloc[-1]) - (1.0 - a34) * float(e34_all.iloc[-1])
+    x_turn_next = (dif_last - c_next) / (a17 - a34)
+    x_turn_buf_next = x_turn_next * 1.005
+    x_zero_next = (0.0 - c_next) / (a17 - a34)
+    intraday_buy = {
+        'base_date': avg.index[-1].strftime('%Y-%m-%d'),
+        'base_close': round(last_avg_c, 2),
+        'dif_last': round(dif_last, 4),
+        'dif_prev': round(dif_prev, 4),
+        'dif_below_zero': bool(dif_last < 0),
+        'dif_falling': bool(dif_last < dif_prev),
+        'eligible_buy': bool(dif_last < 0 and dif_last < dif_prev),
+        'x_turn': round(x_turn_next, 2),
+        'x_turn_pct': round(x_turn_next / last_avg_c - 1.0, 4) if last_avg_c > 0 else None,
+        'x_turn_buf': round(x_turn_buf_next, 2),
+        'x_turn_buf_pct': round(x_turn_buf_next / last_avg_c - 1.0, 4) if last_avg_c > 0 else None,
+        'x_zero': round(x_zero_next, 2),
+        'x_zero_pct': round(x_zero_next / last_avg_c - 1.0, 4) if last_avg_c > 0 else None,
+        'buf_pct': 0.005,
+        'checkpoints': ['10:30', '11:30', '14:00'],
+    }
 
     # 顶层保留 T1 的核心字段，保证 live.py 等旧读取方无缝兼容
     t1 = strategies['T1']
@@ -636,6 +628,7 @@ def main():
         'strategy_order': [s['id'] for s in STRATEGY_SPECS],
         'strategies': strategies,
         'defense_pick': defense_pick,
+        'intraday_buy': intraday_buy,
         'updated': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M'),
         'avg_date': avg.index[-1].strftime('%Y-%m-%d'),
         'avg_source': st.get('avg_source', ''),

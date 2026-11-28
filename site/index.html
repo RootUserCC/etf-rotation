@@ -136,6 +136,17 @@
             <div class="ss" id="sigHintSub">--</div>
           </div>
         </div>
+        <div class="intra-radar" id="intradayRadar">
+          <div class="intra-head">
+            <div class="intra-title">
+              <span>盘中分时买点 · x_turn</span>
+              <span class="badge badge-neutral" id="intraStatusBadge">待机</span>
+            </div>
+            <div class="intra-prices mono" id="intraPrices">--</div>
+          </div>
+          <div class="intra-checks" id="intraChecks"></div>
+          <div class="intra-hint" id="intraHint">--</div>
+        </div>
         <div class="defense-strip">
           <div class="defense-left" id="lastTradeSummary">上次换仓 --</div>
           <div class="defense-right" id="defensePickSummary"></div>
@@ -488,6 +499,10 @@
               <div class="rule-head"><span class="rule-num">04</span><h4>多资产配比与 A3 执行</h4></div>
               <p><b>T1/T3</b> 买卖均在 T+1 开盘成交；<b>T2+/T3+</b> 买入 T+1 开盘、卖出在 T 日尾盘（14:55 后明确转降时）执行。513100 场内溢价超过 3%–5% 时建议临时替换为 513500 或回退 512890+518880。</p>
             </div>
+            <div class="rule-item span-2">
+              <div class="rule-head"><span class="rule-num">05</span><h4>盘中分时买点 · x_turn 拐点投影（防高开低走 + T+1 防锁仓）</h4></div>
+              <p>防守期且前日 880003 <code>DIF &lt; 0</code> 仍下行时，开盘前即可反解当日拐点价 <code>x_turn</code>。固定检查 <b>10:30 / 11:30 / 14:00</b>（极简只看 <b>11:30 午盘 → 13:00 开盘买</b>）：同时满足 <b>① 880003 ≥ x_turn</b>（稳健加 +0.5% 缓冲）且仍在零轴下、<b>② 880003 与进攻 ETF 均走阳（现价 &gt; 今日开盘价，拦截高开低走假突破）</b>、<b>③ 跳过开盘前 30 分钟脉冲（≥ 10:00）</b>时冷静限价切入。若 15:00 收盘跌回 <code>x_turn</code> 下方未确认日线买点，次日 <b>09:35 认错卖出并暂持现金 / T+0 货基</b>（避免立刻买回防守 ETF 被 T+1 锁死一整天），14:55 未再触发再买回防守仓。</p>
+            </div>
           </div>
         </div>
       </div>
@@ -503,7 +518,7 @@
             <div class="sys-row"><span class="sk">平均股价通道</span><span class="sv mono" id="sysSource">--</span></div>
             <div class="sys-row"><span class="sk">回测样本长度</span><span class="sv mono" id="sysLen">--</span></div>
             <div class="sys-row"><span class="sk">数据通道状态</span><span class="sv" id="sysHealth">--</span></div>
-            <div class="sys-row"><span class="sk">自动更新机制</span><span class="sv">工作日 15:10 自动拉取并同步静态站 · 盘中 5s 轮询 live.json</span></div>
+            <div class="sys-row"><span class="sk">自动更新机制</span><span class="sv">工作日 15:10 收盘自动更新 · 盘中仅网页打开时按需 5s 刷新 /api/live（关闭自动休眠）</span></div>
             <div class="sys-row"><span class="sk">数据源通道</span><span class="sv">腾讯后复权日线（20日重叠中位数防跳变）+ 东财 800005 / 通达信 880003</span></div>
           </div>
         </div>

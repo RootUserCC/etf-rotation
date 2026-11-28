@@ -512,8 +512,135 @@
         `<span class="faint" style="font-family:var(--font-sans)">${prefix}</span>` +
         `<span class="badge badge-accent">${defLabel(pick)}</span>` +
         `<span class="faint">20日动量: 512890 <span class="${(dp.mom_890 || 0) >= 0 ? 'up' : 'down'}">${m1}</span> / 159201 <span class="${(dp.mom_201 || 0) >= 0 ? 'up' : 'down'}">${m2}</span></span>`;
+    } else if (data.defense_desc) {
+      dpEl.innerHTML =
+        `<span class="faint" style="font-family:var(--font-sans)">防守配置</span>` +
+        `<span class="badge badge-accent">${data.defense_desc}</span>`;
     } else {
       dpEl.innerHTML = '';
+    }
+
+    renderIntradayRadar(data, liveOverride);
+  }
+
+  // ---------- 盘中分时买点雷达（x_turn 投影 + 阳线过滤 + 10:30/11:30/14:00节点） ----------
+  function renderIntradayRadar(data, liveOverride) {
+    const box = $('intradayRadar');
+    if (!box) return;
+    const badge = $('intraStatusBadge');
+    const pricesEl = $('intraPrices');
+    const checksEl = $('intraChecks');
+    const hintEl = $('intraHint');
+
+    const pill = (text, cls = '') => `<span class="check-pill${cls ? ' ' + cls : ''}">${text}</span>`;
+    const fmtSignPct = v => v == null ? '--' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(2)}%`;
+
+    // 1) 盘中实时模式：直接消费 live.json 的 sig.intraday_buy
+    const liveIb = (liveOverride && !liveOverride.closed && liveOverride.sig) ? liveOverride.sig.intraday_buy : null;
+    if (liveIb) {
+      box.className = 'intra-radar'
+        + (liveIb.status === 'triggered' ? ' is-triggered'
+          : liveIb.status === 'blocked_gap' ? ' is-blocked'
+          : (liveIb.status === 'watch' || liveIb.status === 'wait_time') ? ' is-watch' : '');
+
+      const badgeCls = liveIb.status === 'triggered' ? 'badge-atk'
+        : liveIb.status === 'blocked_gap' ? 'badge-amber'
+        : (liveIb.status === 'watch' || liveIb.status === 'wait_time') ? 'badge-accent'
+        : 'badge-neutral';
+      badge.className = 'badge ' + badgeCls;
+      badge.textContent = liveIb.label || '盘中监控';
+
+      if (liveIb.eligible) {
+        pricesEl.innerHTML =
+          `<span>拐点价 <b>${Number(liveIb.x_turn).toFixed(2)}</b> <span class="${(liveIb.x_turn_pct_cur || 0) <= 0 ? 'up' : 'faint'}">(${fmtSignPct(liveIb.x_turn_pct_cur)})</span></span>` +
+          `<span>+0.5%缓冲 <b>${Number(liveIb.x_turn_buf).toFixed(2)}</b></span>` +
+          `<span class="faint">零轴 ${Number(liveIb.x_zero).toFixed(2)}</span>`;
+
+        const c1 = liveIb.cross_buf ? pill('✓ 过+0.5%缓冲价', 'ok')
+          : liveIb.cross_turn ? pill('✓ 已过拐点价', 'ok')
+          : pill(`○ 未过拐点 (${fmtSignPct(liveIb.x_turn_pct_cur)})`);
+        const c2 = liveIb.yang_ok
+          ? (liveIb.not_gap_trap ? pill('✓ 阳线·非高开', 'ok') : pill('✓ 阳线(高开慎追)', 'warn'))
+          : pill('✕ 阴线/高开低走拦截', 'warn');
+        const c3 = liveIb.in_cp_window
+          ? pill('✓ 推荐检查节点', 'pass-cool')
+          : liveIb.time_ok
+            ? pill(`✓ ≥10:00 · 下节点 ${liveIb.next_cp}`, 'pass-cool')
+            : pill('○ 10:00 前暂观察');
+        checksEl.innerHTML = c1 + c2 + c3;
+      } else {
+        pricesEl.innerHTML =
+          `<span>转降临界 <b>${Number(liveIb.x_turn).toFixed(2)}</b> (${fmtSignPct(liveIb.x_turn_pct_cur)})</span>` +
+          `<span class="faint">零轴 ${Number(liveIb.x_zero).toFixed(2)}</span>`;
+        checksEl.innerHTML = '';
+      }
+      hintEl.textContent = liveIb.hint || '';
+      return;
+    }
+
+    // 2) 休市 / 静态站模式：基于 data.intraday_buy 展示下一交易日盘前预案
+    const ib = data.intraday_buy;
+    if (!ib) {
+      box.className = 'intra-radar';
+      badge.className = 'badge badge-neutral';
+      badge.textContent = '暂无数据';
+      pricesEl.textContent = '--';
+      checksEl.innerHTML = '';
+      hintEl.textContent = '请运行 export_json.py 更新下一交易日拐点预告。';
+      return;
+    }
+
+    const lastLeg = (data.legs || [])[data.legs.length - 1];
+    const isAtk = !!(lastLeg && lastLeg.open && lastLeg.asset === '1000');
+    const ls = data.last_signal || {};
+    const tStr = Number(ib.x_turn).toFixed(2);
+    const tbStr = Number(ib.x_turn_buf).toFixed(2);
+    const zStr = Number(ib.x_zero).toFixed(2);
+    const tPct = fmtPct(ib.x_turn_pct, 2);
+    const tbPct = fmtPct(ib.x_turn_buf_pct, 2);
+
+    if (ls.action === 'buy') {
+      box.className = 'intra-radar is-triggered';
+      badge.className = 'badge badge-atk';
+      badge.textContent = '日线买点已确认';
+      pricesEl.innerHTML =
+        `<span>下日转降临界 <b>${tStr}</b> (${tPct})</span>` +
+        `<span class="faint">零轴 ${zStr}</span>`;
+      checksEl.innerHTML =
+        pill('✓ 日线 DIF 已零下拐头', 'ok') +
+        pill('建议下日 09:30~09:35 开盘执行', 'pass-cool');
+      hintEl.textContent = `${ls.date} 收盘已正式确认日线买入信号，下一交易日开盘切换至 ${ls.next_offense || '进攻仓'}；若已在盘中提前介入则继续持有。`;
+    } else if (isAtk) {
+      box.className = 'intra-radar';
+      badge.className = 'badge badge-neutral';
+      badge.textContent = '已持进攻仓';
+      pricesEl.innerHTML =
+        `<span>下日转降临界 <b>${tStr}</b> (${tPct})</span>` +
+        `<span class="faint">零轴 ${zStr}</span>`;
+      checksEl.innerHTML = '';
+      hintEl.textContent = `当前持进攻仓无需分时买点；下一交易日 880003 跌破 ${tStr}（${tPct}）时 DIF 转降（仍须通过 S1+S2 检验才切防守）。`;
+    } else if (ib.eligible_buy) {
+      box.className = 'intra-radar is-watch';
+      badge.className = 'badge badge-accent';
+      badge.textContent = '下日盘中待监控';
+      pricesEl.innerHTML =
+        `<span>拐点价 <b>${tStr}</b> <span class="up">(${tPct})</span></span>` +
+        `<span>+0.5%缓冲 <b>${tbStr}</b> (${tbPct})</span>` +
+        `<span class="faint">零轴 ${zStr}</span>`;
+      checksEl.innerHTML =
+        pill(`① 880003 ≥ ${tStr} (稳健 ${tbStr})`, 'pass-cool') +
+        pill('② 880003 与进攻 ETF 走阳(防高开)') +
+        pill('③ 10:30 / 11:30 / 14:00 节点');
+      hintEl.textContent = `防守期预案（基准 ${ib.base_date} 收 ${Number(ib.base_close).toFixed(2)}）：下日 ≥10:00 站稳拐点且走阳可限价分时切入（最简 11:30→13:00）；若 15:00 收盘回落拐点下，次日 09:35 认错卖出转现金/T+0 货基防锁仓。`;
+    } else {
+      box.className = 'intra-radar';
+      badge.className = 'badge badge-neutral';
+      badge.textContent = '非零下待买态';
+      pricesEl.innerHTML =
+        `<span>下日拐点临界 <b>${tStr}</b> (${tPct})</span>` +
+        `<span class="faint">零轴 ${zStr}</span>`;
+      checksEl.innerHTML = '';
+      hintEl.textContent = `当前 DIF=${Number(ib.dif_last).toFixed(4)}（${ib.dif_below_zero ? '零下未下行' : '零轴上方'}），暂不启用盘中分时买点。`;
     }
   }
 
@@ -674,6 +801,27 @@
       prevM = m;
     }
 
+    // 若处于防守待买态，在 880003 走势上叠加盘中分时买点拐点价 x_turn 虚线参考
+    const liveIb = (lastLive && !lastLive.closed && lastLive.sig) ? lastLive.sig.intraday_buy : null;
+    const xTurnVal = (liveIb && liveIb.eligible && liveIb.x_turn != null)
+      ? Number(liveIb.x_turn)
+      : ((data.intraday_buy && data.intraday_buy.eligible_buy && data.intraday_buy.x_turn != null)
+          ? Number(data.intraday_buy.x_turn) : null);
+    const avgMarkLine = xTurnVal != null ? {
+      silent: true,
+      symbol: 'none',
+      data: [{ yAxis: xTurnVal }],
+      lineStyle: { color: '#f59e0b', type: 'dashed', width: 1.1 },
+      label: {
+        show: true,
+        position: 'insideEndTop',
+        color: '#f59e0b',
+        fontSize: 10.5,
+        fontFamily: 'monospace',
+        formatter: `盘中拐点 ${xTurnVal.toFixed(2)}`
+      }
+    } : undefined;
+
     charts.market.setOption({
       animation: false,
       textStyle: { color: T.text, fontFamily: '"Plus Jakarta Sans", "Noto Sans SC", sans-serif' },
@@ -786,14 +934,16 @@
           xAxisIndex: 0, yAxisIndex: 0,
           itemStyle: { color: T.buy, color0: T.sell, borderColor: T.buy, borderColor0: T.sell },
           markArea: { silent: true, data: areas },
-          markPoint: { data: marks }
+          markPoint: { data: marks },
+          ...(avgMarkLine ? { markLine: avgMarkLine } : {})
         }] : [{
           id: 'avg', name: '平均股价(左轴)', type: 'line', data: data.avg,
           xAxisIndex: 0, yAxisIndex: 0, symbol: 'none',
           lineStyle: { width: 1.8, color: T.avg }, itemStyle: { color: T.avg },
           sampling: 'lttb', large: true, largeThreshold: 400,
           markArea: { silent: true, data: areas },
-          markPoint: { data: marks }
+          markPoint: { data: marks },
+          ...(avgMarkLine ? { markLine: avgMarkLine } : {})
         }]),
         {
           id: 'etf2000e', name: '中证2000增强ETF(右轴)', type: 'line', data: data.etf2000e,
@@ -1392,7 +1542,20 @@
       + (a.value != null ? ` 均价 <b class="mono">${a.value.toFixed(2)}</b> <span class="mono ${a.chg_pct >= 0 ? 'up' : 'down'}">${chg(a.chg_pct)}</span>` : '')
       + (leg ? ` · ${leg.name} <span class="mono ${leg.chg_pct >= 0 ? 'up' : 'down'}">${chg(leg.chg_pct)}</span>` : '');
 
-    if (sig.note) {
+    const ib = sig.intraday_buy;
+    if (ib && ib.status === 'triggered') {
+      banner.className = 'sig-banner buy';
+      banner.textContent = `【盘中分时买点 ${d.time} · ${ib.label}】${ib.hint}`;
+      banner.dataset.live = '1';
+    } else if (ib && ib.status === 'blocked_gap') {
+      banner.className = 'sig-banner info';
+      banner.textContent = `【盘中防陷阱拦截 ${d.time}】${ib.hint}`;
+      banner.dataset.live = '1';
+    } else if (ib && ib.status === 'wait_time') {
+      banner.className = 'sig-banner info';
+      banner.textContent = `【盘中预览 ${d.time} · ${ib.label}】${ib.hint}`;
+      banner.dataset.live = '1';
+    } else if (sig.note) {
       const cls = sig.preview === 'buy' ? 'buy' : (sig.preview === 'sell' ? 'sell' : 'info');
       banner.className = 'sig-banner ' + cls;
       let txt = `【盘中预览 ${d.time}】${sig.note}`;
@@ -1428,10 +1591,31 @@
     const px = code => (lc.etfs && lc.etfs[code] != null) ? lc.etfs[code] : null;
     const avgData = (klineMode && lastData.avg_k) ? ext(lastData.avg_k, lc.ohlc) : ext(lastData.avg, lc.avg);
 
+    // 盘中同步更新 880003 走势上的拐点价 x_turn 虚线参考
+    const liveIb = (lastLive && !lastLive.closed && lastLive.sig) ? lastLive.sig.intraday_buy : null;
+    const xTurnVal = (liveIb && liveIb.eligible && liveIb.x_turn != null)
+      ? Number(liveIb.x_turn)
+      : ((lastData.intraday_buy && lastData.intraday_buy.eligible_buy && lastData.intraday_buy.x_turn != null)
+          ? Number(lastData.intraday_buy.x_turn) : null);
+    const avgMarkLine = xTurnVal != null ? {
+      silent: true,
+      symbol: 'none',
+      data: [{ yAxis: xTurnVal }],
+      lineStyle: { color: '#f59e0b', type: 'dashed', width: 1.1 },
+      label: {
+        show: true,
+        position: 'insideEndTop',
+        color: '#f59e0b',
+        fontSize: 10.5,
+        fontFamily: 'monospace',
+        formatter: `盘中拐点 ${xTurnVal.toFixed(2)}`
+      }
+    } : { data: [] };
+
     charts.market.setOption({
       xAxis: [{ data: D }, { data: D }],
       series: [
-        { id: 'avg', data: avgData },
+        { id: 'avg', data: avgData, markLine: avgMarkLine },
         { id: 'etf2000e', data: ext(lastData.etf2000e, px('159552')) },
         { id: 'etfdiv', data: ext(lastData.etfdiv, px('512890')) },
         { id: 'dif', data: ext(lastData.dif, lc.dif) },
@@ -1558,12 +1742,16 @@
     }).catch(() => {});
 
     const poll = () => {
-      fetch('live.json?_=' + Date.now()).then(r => r.ok ? r.json() : null).then(d => {
+      fetch('/api/live?_=' + Date.now()).then(r => r.ok ? r.json() : null).then(d => {
         if (d) patchLive(d);
       }).catch(() => {});
     };
     poll();
     setInterval(() => { if (!document.hidden && !refreshing) poll(); }, 5000);
+    // 切回标签页时立刻刷新一次实时行情，避免多等 5 秒
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && !refreshing) poll();
+    });
   }
 
   // ---------- 事件绑定 ----------

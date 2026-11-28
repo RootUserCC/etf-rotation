@@ -7,7 +7,6 @@ live.py 作为守护线程在交易时段刷新 site/live.json（ETF 快照 + �
 """
 import datetime as dt
 import json
-import random
 import subprocess
 import sys
 import threading
@@ -18,7 +17,22 @@ from urllib.parse import urlparse, parse_qs
 
 ROOT = Path(__file__).resolve().parent
 SITE_DIR = ROOT / "site"
-PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
+
+
+def _resolve_python() -> Path:
+    """优先使用 .venv，不存在时自动回退到当前解释器对应的 python.exe（兼容 pythonw.exe）。"""
+    venv_py = ROOT / ".venv" / "Scripts" / "python.exe"
+    if venv_py.exists():
+        return venv_py
+    cur = Path(sys.executable)
+    if cur.name.lower() == "pythonw.exe":
+        sib = cur.with_name("python.exe")
+        if sib.exists():
+            return sib
+    return cur
+
+
+PYTHON = _resolve_python()
 LOG_FILE = ROOT / "update.log"
 STATUS_FILE = ROOT / "data" / "_status.json"
 PROGRESS_FILE = ROOT / "data" / "_progress.json"
@@ -30,18 +44,6 @@ _last_run = 0.0
 _running = False
 _run_started = 0.0
 _last_result = {}
-
-_practice_df = None
-
-
-def practice_df():
-    """延迟加载 5 分钟练习数据（含 MACD柱/VWAP 指标）"""
-    global _practice_df
-    if _practice_df is None:
-        sys.path.insert(0, str(ROOT))
-        from practice import prepare
-        _practice_df = prepare()
-    return _practice_df
 
 
 def publish_allowed():
@@ -108,88 +110,24 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(SITE_DIR), **kwargs)
 
     def do_GET(self):
-        if self.path.startswith("/api/update"):
+        if self.path.startswith("/api/live"):
+            self.handle_live()
+        elif self.path.startswith("/api/update"):
             self.handle_update()
         elif self.path.startswith("/api/status"):
             self.handle_status()
-        elif self.path.startswith("/api/practice/day"):
-            self.handle_practice_day()
-        elif self.path.startswith("/api/practice/optimal"):
-            self.handle_practice_optimal()
-        elif self.path.startswith("/api/practice/stats"):
-            self.handle_practice_stats()
         else:
             super().do_GET()
 
-    def do_POST(self):
-        if self.path.startswith("/api/practice/log"):
-            length = int(self.headers.get("Content-Length", 0))
-            try:
-                rec = json.loads(self.rfile.read(length).decode("utf-8"))
-                from practice import append_log
-                append_log(rec)
-                self._send_json({"ok": True})
-            except Exception as e:  # noqa: BLE001
-                self._send_json({"ok": False, "error": str(e)})
-        else:
-            self._send_json({"ok": False, "error": "unknown api"})
-
-    # ---- 做T演练 API ----
-
-    def _practice_day_df(self):
-        """解析 ?date= 并返回当日数据，无 date 参数则随机抽一天"""
-        import datetime as dt
-        df = practice_df()
-        days = sorted(set(df.index.date))
-        date_str = parse_qs(urlparse(self.path).query).get("date", [""])[0]
-        if date_str:
-            day = dt.date.fromisoformat(date_str)
-            if day not in days:
-                return None, None, days
-        else:
-            day = random.choice(days)
-        return day, df[df.index.date == day], days
-
-    def handle_practice_day(self):
-        day, d, days = self._practice_day_df()
-        if day is None:
-            return self._send_json({"ok": False, "error": "该日无数据"})
-        bars = [{
-            "t": t.strftime("%H:%M"),
-            "o": round(float(r.open), 4), "h": round(float(r.high), 4),
-            "l": round(float(r.low), 4), "c": round(float(r.close), 4),
-            "vol": round(float(r.vol), 0),
-            "hist": round(float(r["hist"]), 5), "vwap": round(float(r["vwap"]), 4),
-            "dif": round(float(r["dif"]), 5), "dea": round(float(r["dea"]), 5),
-            "bsig": int(r["buy_sig"]), "ssig": int(r["sell_sig"]),
-        } for t, r in d.iterrows()]
-        df = practice_df()
-        prev = df[df.index.date < day]
-        prev_close = round(float(prev["close"].iloc[-1]), 4) if len(prev) else None
-        self._send_json({"ok": True, "date": str(day), "bars": bars,
-                         "prev_close": prev_close,
-                         "range": [str(days[0]), str(days[-1])]})
-
-    def handle_practice_optimal(self):
-        from t_optimal import optimal_t
-        day, d, _ = self._practice_day_df()
-        if day is None:
-            return self._send_json({"ok": False, "error": "该日无数据"})
-        ret, trades = optimal_t(d["close"])
-        self._send_json({
-            "ok": True, "ret": round(ret, 6),
-            "trades": [[t.strftime("%H:%M"), act, round(float(p), 4)]
-                       for t, act, p in trades],
-        })
-
-    def handle_practice_stats(self):
-        log_path = ROOT / "practice_log.csv"
-        rows = []
-        if log_path.exists():
-            import csv
-            with log_path.open(encoding="utf-8") as f:
-                rows = list(csv.DictReader(f))
-        self._send_json({"ok": True, "rows": rows})
+    def handle_live(self):
+        """按需实时行情接口：仅在网页打开并轮询时抓取（内部 5s/60s 节流），关闭网页后零网络请求。"""
+        force = parse_qs(urlparse(self.path).query).get("force", [""])[0] == "1"
+        try:
+            import live
+            doc = live.get_live_snapshot(force=force)
+            self._send_json(doc)
+        except Exception as e:  # noqa: BLE001
+            self._send_json({"closed": True, "error": repr(e)[:120], "etfs": [], "sig": {}, "stale": True})
 
     def handle_update(self):
         global _last_run, _running, _run_started
@@ -292,7 +230,9 @@ if __name__ == "__main__":
     except OSError:
         lan_ip = "?"
     print(f"服务已启动: http://127.0.0.1:{PORT}/  (局域网: http://{lan_ip}:{PORT}/)")
+    print("实时行情模式: 按需激活（仅在网页打开时由 /api/live 节流抓取，无人浏览时零网络请求）")
     threading.Thread(target=startup_update_if_stale, daemon=True).start()
-    if os.environ.get("LIVE_DISABLE") != "1":
+    # 默认采用按需模式，仅当显式设置 LIVE_BG=1 时才启用旧版后台常驻轮询
+    if os.environ.get("LIVE_BG") == "1" and os.environ.get("LIVE_DISABLE") != "1":
         threading.Thread(target=_live_loop, daemon=True).start()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
